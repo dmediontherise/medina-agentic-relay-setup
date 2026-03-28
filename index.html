@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Medina Agentic Relay Setup</title>
+<style>
+/* ─────────────────────────────────────────────────────────
+   TOKENS & RESET
+───────────────────────────────────────────────────────── */
+:root{
+  --bg:         #000000;
+  --bg2:        #0a0a0f;
+  --bg3:        #111116;
+  --surface:    rgba(255,255,255,0.05);
+  --surface2:   rgba(255,255,255,0.08);
+  --border:     rgba(255,255,255,0.09);
+  --border2:    rgba(255,255,255,0.14);
+  --text:       #f5f5f7;
+  --text2:      rgba(245,245,247,0.6);
+  --text3:      rgba(245,245,247,0.35);
+  --blue:       #0a84ff;
+  --indigo:     #5e5ce6;
+  --purple:     #bf5af2;
+  --teal:       #5ac8fa;
+  --green:      #30d158;
+  --orange:     #ff9f0a;
+  --pink:       #ff375f;
+  --yellow:     #ffd60a;
+  --r-sm:  10px;
+  --r-md:  16px;
+  --r-lg:  20px;
+  --r-xl:  28px;
+  --sidebar-w: 248px;
+  --ease: cubic-bezier(.4,0,.2,1);
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;background:var(--bg);}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'SF Pro Display','Segoe UI',Helvetica,Arial,sans-serif;
+  background:var(--bg);color:var(--text);display:flex;min-height:100vh;overflow-x:hidden;
+}
+::selection{background:rgba(10,132,255,.35);color:var(--text);}
+::-webkit-scrollbar{width:5px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px;}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,.2);}
+
+/* ─────────────────────────────────────────────────────────
+   ANIMATED MESH BACKGROUND
+───────────────────────────────────────────────────────── */
+.mesh{
+  position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden;
+}
+.blob{
+  position:absolute;border-radius:50%;filter:blur(120px);opacity:.18;
+  animation:blobDrift linear infinite;
+}
+.b1{width:700px;height:700px;background:var(--purple);top:-200px;left:-100px;animation-duration:22s;}
+.b2{width:600px;height:600px;background:var(--blue);top:30%;right:-150px;animation-duration:28s;animation-delay:-10s;}
+.b3{width:500px;height:500px;background:var(--teal);bottom:-100px;left:30%;animation-duration:20s;animation-delay:-5s;}
+.b4{width:400px;height:400px;background:var(--indigo);top:60%;left:-80px;animation-duration:25s;animation-delay:-15s;}
+@keyframes blobDrift{
+  0%,100%{transform:translate(0,0) scale(1);}
+  25%{transform:translate(60px,-40px) scale(1.05);}
+  50%{transform:translate(30px,50px) scale(.95);}
+  75%{transform:translate(-40px,20px) scale(1.03);}
+}
+.noise{
+  position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.04;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size:200px 200px;
+}
+
+/* ─────────────────────────────────────────────────────────
+   SIDEBAR
+───────────────────────────────────────────────────────── */
+.sidebar{
+  position:fixed;top:0;left:0;width:var(--sidebar-w);height:100vh;
+  background:rgba(0,0,0,.6);
+  backdrop-filter:blur(40px) saturate(180%);
+  -webkit-backdrop-filter:blur(40px) saturate(180%);
+  border-right:1px solid var(--border);
+  display:flex;flex-direction:column;z-index:200;overflow-y:auto;
+}
+.sidebar-brand{
+  padding:22px 20px 18px;
+  border-bottom:1px solid var(--border);
+}
+.brand-logo{
+  font-size:24px;font-weight:700;letter-spacing:-.5px;
+  background:linear-gradient(135deg,#fff 30%,rgba(255,255,255,.55));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  line-height:1;margin-bottom:4px;
+}
+.brand-tagline{font-size:11px;color:var(--text3);letter-spacing:.04em;}
+.nav-scroll{flex:1;padding:10px 0;}
+.nav-section{margin-bottom:4px;}
+.nav-section-label{
+  font-size:10px;font-weight:600;color:var(--text3);
+  padding:14px 18px 6px;text-transform:uppercase;letter-spacing:.1em;
+}
+.nav-link{
+  display:flex;align-items:center;gap:10px;
+  padding:8px 18px;font-size:13.5px;font-weight:400;color:var(--text2);
+  text-decoration:none;border-radius:10px;margin:1px 8px;
+  transition:background .2s var(--ease),color .2s var(--ease);position:relative;
+}
+.nav-link:hover{background:rgba(255,255,255,.06);color:var(--text);}
+.nav-link.active{background:rgba(10,132,255,.15);color:var(--blue);}
+.nav-link.active::before{
+  content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);
+  width:3px;height:60%;background:var(--blue);border-radius:0 3px 3px 0;margin-left:8px;
+}
+.nav-icon{font-size:15px;flex-shrink:0;opacity:.8;}
+
+/* ─────────────────────────────────────────────────────────
+   MAIN
+───────────────────────────────────────────────────────── */
+.main{
+  margin-left:var(--sidebar-w);flex:1;position:relative;z-index:10;
+}
+
+/* ─────────────────────────────────────────────────────────
+   HERO
+───────────────────────────────────────────────────────── */
+.hero{
+  min-height:100vh;display:flex;align-items:center;
+  padding:80px 64px;gap:60px;position:relative;overflow:hidden;
+}
+.hero::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:120px;
+  background:linear-gradient(to bottom,transparent,var(--bg));pointer-events:none;z-index:2;
+}
+.hero-left{flex:1;z-index:3;}
+.hero-eyebrow{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(10,132,255,.12);border:1px solid rgba(10,132,255,.25);
+  color:var(--blue);font-size:12px;font-weight:500;letter-spacing:.04em;
+  padding:6px 14px;border-radius:20px;margin-bottom:28px;
+  text-transform:uppercase;
+}
+.hero-eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.4;transform:scale(.8);}}
+
+.hero-title{
+  font-size:clamp(52px,7vw,88px);font-weight:700;letter-spacing:-.04em;
+  line-height:1;margin-bottom:20px;
+}
+.hero-title-main{
+  background:linear-gradient(135deg,#ffffff 0%,rgba(255,255,255,.75) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  display:block;
+}
+.hero-title-accent{
+  background:linear-gradient(135deg,var(--blue) 0%,var(--purple) 50%,var(--teal) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  display:block;
+}
+.hero-subtitle{
+  font-size:18px;color:var(--text2);line-height:1.6;max-width:480px;
+  margin-bottom:36px;font-weight:300;
+}
+.hero-ctas{display:flex;gap:12px;flex-wrap:wrap;}
+.btn-primary{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--blue);color:#fff;
+  font-size:15px;font-weight:500;padding:12px 24px;
+  border-radius:var(--r-md);border:none;cursor:pointer;text-decoration:none;
+  transition:transform .2s var(--ease),box-shadow .2s var(--ease),filter .2s;
+  box-shadow:0 0 0 0 rgba(10,132,255,.4);
+}
+.btn-primary:hover{
+  transform:translateY(-2px);
+  box-shadow:0 8px 32px rgba(10,132,255,.4);
+  filter:brightness(1.1);
+}
+.btn-ghost{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.07);color:var(--text);
+  font-size:15px;font-weight:500;padding:12px 24px;
+  border-radius:var(--r-md);border:1px solid var(--border2);cursor:pointer;text-decoration:none;
+  transition:background .2s var(--ease),transform .2s var(--ease);
+}
+.btn-ghost:hover{background:rgba(255,255,255,.12);transform:translateY(-2px);}
+
+/* Hero floating terminal */
+.hero-right{z-index:3;flex-shrink:0;}
+.hero-terminal{
+  width:460px;
+  background:rgba(20,20,28,.8);
+  backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);
+  border:1px solid rgba(255,255,255,.1);
+  border-radius:var(--r-lg);overflow:hidden;
+  box-shadow:0 40px 100px rgba(0,0,0,.6),0 0 0 .5px rgba(255,255,255,.05),inset 0 1px 0 rgba(255,255,255,.1);
+  animation:termFloat 5s ease-in-out infinite;
+}
+@keyframes termFloat{
+  0%,100%{transform:translateY(0) rotate(-.4deg);}
+  50%{transform:translateY(-16px) rotate(.4deg);}
+}
+.term-titlebar{
+  background:rgba(255,255,255,.04);
+  padding:12px 16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+}
+.traffic{display:flex;gap:7px;}
+.traffic span{
+  width:12px;height:12px;border-radius:50%;transition:filter .2s;
+}
+.traffic span:nth-child(1){background:#ff5f57;}
+.traffic span:nth-child(2){background:#febc2e;}
+.traffic span:nth-child(3){background:#28c840;}
+.term-name{
+  flex:1;text-align:center;font-size:12px;
+  color:rgba(255,255,255,.35);
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;
+}
+.term-body{
+  padding:18px 20px;
+  font-family:ui-monospace,'SF Mono',Menlo,Monaco,monospace;
+  font-size:12.5px;line-height:1.75;min-height:220px;
+}
+.tl{display:block;}
+.tp{color:#32d158;}
+.tc{color:rgba(245,245,247,.9);}
+.to{color:#5ac8fa;font-size:11.5px;}
+.ts{color:#ffd60a;}
+.tr{color:#ff453a;}
+.cursor-blink{
+  display:inline-block;width:7px;height:13px;
+  background:rgba(10,132,255,.9);vertical-align:text-bottom;
+  animation:termBlink 1s step-end infinite;margin-left:1px;border-radius:1px;
+}
+@keyframes termBlink{0%,100%{opacity:1;}50%{opacity:0;}}
+
+/* ─────────────────────────────────────────────────────────
+   SECTION LAYOUT
+───────────────────────────────────────────────────────── */
+.content{padding:80px 64px;max-width:1020px;}
+section{margin-bottom:96px;}
+.reveal{opacity:0;transform:translateY(28px);transition:opacity .7s var(--ease),transform .7s var(--ease);}
+.reveal.visible{opacity:1;transform:translateY(0);}
+
+.section-eyebrow{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.12em;
+  margin-bottom:12px;
+}
+.section-eyebrow-bar{width:20px;height:1.5px;background:var(--text3);border-radius:1px;}
+h2{
+  font-size:clamp(28px,4vw,38px);font-weight:700;
+  letter-spacing:-.03em;color:var(--text);margin-bottom:14px;line-height:1.15;
+}
+h2 .gradient-text{
+  background:linear-gradient(135deg,var(--blue),var(--purple));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+h3{font-size:19px;font-weight:600;color:var(--text);margin-bottom:10px;letter-spacing:-.02em;}
+p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
+
+/* ─────────────────────────────────────────────────────────
+   GLASS CARD
+───────────────────────────────────────────────────────── */
+.glass-card{
+  background:var(--surface);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid var(--border);
+  border-radius:var(--r-lg);
+  transition:background .3s var(--ease),border-color .3s var(--ease),
+             transform .3s var(--ease),box-shadow .3s var(--ease);
+}
+.glass-card:hover{
+  background:var(--surface2);
+  border-color:var(--border2);
+  transform:translateY(-3px);
+  box-shadow:0 20px 60px rgba(0,0,0,.4),0 0 0 .5px rgba(255,255,255,.05);
+}
+
+/* ─────────────────────────────────────────────────────────
+   PREREQ GRID
+───────────────────────────────────────────────────────── */
+.prereq-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));
+  gap:14px;margin-top:24px;
+}
+.prereq-item{
+  padding:20px;display:flex;gap:14px;align-items:flex-start;
+}
+.prereq-item-icon{
+  width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  font-size:20px;flex-shrink:0;
+}
+.prereq-item strong{font-size:14px;font-weight:600;display:block;margin-bottom:4px;color:var(--text);}
+.prereq-item span{font-size:12.5px;color:var(--text2);}
+.prereq-item code{
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;font-size:11px;
+  background:rgba(255,255,255,.08);padding:2px 7px;border-radius:5px;color:var(--blue);
+}
+
+/* ─────────────────────────────────────────────────────────
+   OS TOGGLE
+───────────────────────────────────────────────────────── */
+.os-toggle{
+  display:inline-flex;
+  background:rgba(255,255,255,.06);
+  border:1px solid var(--border);
+  border-radius:12px;padding:4px;
+  margin-bottom:28px;position:relative;
+}
+.os-toggle-pill{
+  position:absolute;top:4px;left:4px;
+  height:calc(100% - 8px);
+  background:rgba(255,255,255,.12);
+  border-radius:9px;
+  transition:transform .3s var(--ease),width .3s var(--ease);
+  border:1px solid rgba(255,255,255,.1);
+}
+.os-tab{
+  position:relative;z-index:1;
+  display:flex;align-items:center;gap:7px;
+  padding:9px 20px;font-size:13.5px;font-weight:500;
+  color:var(--text2);cursor:pointer;border-radius:9px;
+  transition:color .25s var(--ease);user-select:none;
+  white-space:nowrap;
+}
+.os-tab.active{color:var(--text);}
+.os-tab-icon{font-size:16px;}
+.os-pane{display:none;}
+.os-pane.active{display:block;}
+
+/* ─────────────────────────────────────────────────────────
+   STEP LIST
+───────────────────────────────────────────────────────── */
+.step-list{list-style:none;position:relative;}
+.step-list::before{
+  content:'';position:absolute;left:19px;top:24px;bottom:24px;width:1px;
+  background:linear-gradient(to bottom,var(--blue),var(--purple),transparent);
+  opacity:.3;
+}
+.step-item{
+  display:flex;gap:20px;margin-bottom:32px;position:relative;
+}
+.step-num{
+  flex-shrink:0;width:38px;height:38px;border-radius:50%;
+  background:linear-gradient(135deg,var(--blue),var(--indigo));
+  color:#fff;font-size:14px;font-weight:600;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 0 4px rgba(10,132,255,.15);
+  position:relative;z-index:1;margin-top:2px;
+}
+.step-body{flex:1;}
+.step-body h4{
+  font-size:16px;font-weight:600;color:var(--text);margin-bottom:8px;
+}
+
+/* ─────────────────────────────────────────────────────────
+   TERMINAL BLOCKS
+───────────────────────────────────────────────────────── */
+.term-block{
+  background:rgba(12,12,18,.85);
+  backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:var(--r-md);overflow:hidden;margin:14px 0;
+  box-shadow:0 8px 32px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.05);
+}
+.tb-bar{
+  padding:10px 16px;background:rgba(255,255,255,.03);
+  border-bottom:1px solid rgba(255,255,255,.06);
+  display:flex;align-items:center;gap:10px;
+}
+.tb-dots{display:flex;gap:6px;}
+.tb-dots span{width:11px;height:11px;border-radius:50%;}
+.tb-dots .d-r{background:#ff5f57;}
+.tb-dots .d-y{background:#febc2e;}
+.tb-dots .d-g{background:#28c840;}
+.tb-label{
+  flex:1;font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  font-size:11px;color:rgba(255,255,255,.25);text-align:center;
+}
+.tb-copy{
+  background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+  color:rgba(255,255,255,.45);font-size:11px;padding:4px 12px;border-radius:6px;
+  cursor:pointer;font-family:-apple-system,sans-serif;
+  transition:background .2s,color .2s,transform .1s;
+}
+.tb-copy:hover{background:rgba(255,255,255,.12);color:var(--text);}
+.tb-copy:active{transform:scale(.96);}
+.tb-copy.ok{color:var(--green);border-color:rgba(48,209,88,.3);}
+.tb-body{
+  padding:16px 20px;
+  font-family:ui-monospace,'SF Mono',Menlo,Monaco,monospace;
+  font-size:12.5px;line-height:1.8;
+}
+.tbb-div{display:block;}
+.c-comment{color:rgba(255,255,255,.28);}
+.c-prompt{color:#32d158;}
+.c-cmd{color:rgba(245,245,247,.9);}
+.c-out{color:#5ac8fa;font-size:11.5px;}
+.c-ok{color:#30d158;}
+.c-warn{color:#ffd60a;}
+
+/* ─────────────────────────────────────────────────────────
+   RELAY DIAGRAM
+───────────────────────────────────────────────────────── */
+.relay-wrap{margin:32px 0;}
+.relay-flow{
+  display:flex;align-items:stretch;gap:0;
+  overflow-x:auto;padding:4px 2px;
+}
+.relay-node{
+  flex:1;min-width:170px;
+  padding:24px 20px;
+  cursor:pointer;
+  position:relative;overflow:hidden;
+}
+.relay-node::before{
+  content:'';position:absolute;inset:0;border-radius:var(--r-lg);
+  opacity:0;transition:opacity .3s var(--ease);
+}
+.relay-node.rn-blue::before{background:radial-gradient(circle at 50% 0%,rgba(10,132,255,.2),transparent 70%);}
+.relay-node.rn-green::before{background:radial-gradient(circle at 50% 0%,rgba(48,209,88,.2),transparent 70%);}
+.relay-node.rn-multi::before{background:radial-gradient(circle at 50% 0%,rgba(191,90,242,.2),transparent 70%);}
+.relay-node:hover::before,.relay-node.active::before{opacity:1;}
+.relay-node.active{border-color:rgba(255,255,255,.2)!important;}
+.relay-arrow-wrap{
+  display:flex;align-items:center;justify-content:center;padding:0 4px;flex-shrink:0;
+}
+.relay-arrow-svg{width:32px;height:24px;flex-shrink:0;}
+.rn-model{
+  font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;
+  margin-bottom:8px;
+}
+.rn-blue .rn-model{color:var(--blue);}
+.rn-green .rn-model{color:var(--green);}
+.rn-multi .rn-model{color:var(--purple);}
+.rn-stage{font-size:17px;font-weight:600;color:var(--text);margin-bottom:4px;letter-spacing:-.02em;}
+.rn-desc{font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.5;}
+.rn-tags{display:flex;flex-wrap:wrap;gap:5px;}
+.rn-tag{
+  font-size:10px;font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  padding:3px 8px;border-radius:6px;
+  background:rgba(255,255,255,.07);color:var(--text2);
+  border:1px solid rgba(255,255,255,.08);
+}
+.rn-expand{
+  position:absolute;top:14px;right:14px;
+  width:22px;height:22px;border-radius:50%;
+  background:rgba(255,255,255,.08);
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;color:var(--text2);
+  transition:background .2s,transform .3s;
+}
+.relay-node:hover .rn-expand{background:rgba(255,255,255,.14);}
+.relay-node.active .rn-expand{transform:rotate(45deg);}
+.rn-detail{
+  overflow:hidden;max-height:0;
+  transition:max-height .4s var(--ease),opacity .3s var(--ease);
+  opacity:0;
+}
+.relay-node.active .rn-detail{max-height:200px;opacity:1;}
+.rn-detail-inner{
+  margin-top:14px;padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.08);
+  font-size:12px;color:var(--text2);line-height:1.6;
+}
+
+/* ─────────────────────────────────────────────────────────
+   SKILLS
+───────────────────────────────────────────────────────── */
+.skills-filter{
+  display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 24px;
+}
+.filter-pill{
+  padding:7px 16px;border-radius:20px;font-size:12.5px;font-weight:500;
+  background:rgba(255,255,255,.06);border:1px solid var(--border);
+  color:var(--text2);cursor:pointer;transition:background .2s,border-color .2s,color .2s;
+  user-select:none;
+}
+.filter-pill:hover{background:rgba(255,255,255,.1);color:var(--text);}
+.filter-pill.active{
+  background:rgba(10,132,255,.15);border-color:rgba(10,132,255,.35);color:var(--blue);
+}
+.skills-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+  gap:14px;
+}
+.skill-card{
+  padding:20px;cursor:default;
+  border-radius:var(--r-lg);
+  transition:opacity .3s;
+}
+.skill-card.hidden{opacity:.25;pointer-events:none;}
+.sk-badge{
+  display:inline-flex;align-items:center;gap:5px;
+  font-size:10.5px;font-weight:600;
+  padding:4px 10px;border-radius:8px;margin-bottom:12px;
+  text-transform:uppercase;letter-spacing:.06em;
+}
+.sk-workflow{background:rgba(10,132,255,.15);color:var(--blue);}
+.sk-quality{background:rgba(48,209,88,.15);color:var(--green);}
+.sk-debug{background:rgba(255,69,58,.15);color:#ff453a;}
+.sk-review{background:rgba(255,159,10,.15);color:var(--orange);}
+.sk-setup{background:rgba(191,90,242,.15);color:var(--purple);}
+.sk-utility{background:rgba(90,200,250,.15);color:var(--teal);}
+.skill-card h4{font-size:15px;font-weight:600;color:var(--text);margin-bottom:6px;}
+.skill-card p{font-size:13px;color:var(--text2);margin:0;line-height:1.55;}
+.sk-meta{
+  font-size:11px;font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  color:var(--text3);margin-top:10px;
+}
+
+/* ─────────────────────────────────────────────────────────
+   HOOKS
+───────────────────────────────────────────────────────── */
+.hook-list{display:flex;flex-direction:column;gap:14px;margin-top:20px;}
+.hook-card{
+  border-radius:var(--r-lg);overflow:hidden;cursor:pointer;
+}
+.hook-header{
+  padding:18px 20px;display:flex;align-items:center;justify-content:space-between;
+  transition:background .2s;
+}
+.hook-card:hover .hook-header{background:rgba(255,255,255,.04);}
+.hook-header-left{display:flex;align-items:center;gap:14px;}
+.hook-icon{
+  width:38px;height:38px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;
+}
+.hook-name{font-size:15px;font-weight:600;color:var(--text);}
+.hook-name small{font-size:12px;font-weight:400;color:var(--text2);margin-left:6px;}
+.hook-right{display:flex;align-items:center;gap:10px;}
+.event-badge{
+  font-size:11px;font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  padding:4px 10px;border-radius:8px;font-weight:500;
+}
+.ev-stop{background:rgba(48,209,88,.15);color:var(--green);}
+.ev-bash{background:rgba(255,159,10,.15);color:var(--orange);}
+.ev-file{background:rgba(10,132,255,.15);color:var(--blue);}
+.hook-chevron{
+  font-size:12px;color:var(--text3);
+  transition:transform .3s var(--ease);
+}
+.hook-card.expanded .hook-chevron{transform:rotate(90deg);}
+.hook-body{
+  overflow:hidden;max-height:0;
+  transition:max-height .4s var(--ease),opacity .3s var(--ease);
+  opacity:0;
+}
+.hook-card.expanded .hook-body{max-height:300px;opacity:1;}
+.hook-body-inner{
+  padding:0 20px 20px;border-top:1px solid rgba(255,255,255,.06);padding-top:16px;
+}
+.hook-desc{font-size:13px;color:var(--text2);margin-bottom:12px;}
+.fm-block{
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  font-size:12px;background:rgba(0,0,0,.4);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:14px 16px;line-height:1.7;
+}
+.fm-k{color:var(--blue);}
+.fm-v{color:var(--green);}
+
+/* ─────────────────────────────────────────────────────────
+   TABLE
+───────────────────────────────────────────────────────── */
+.glass-table{
+  width:100%;border-collapse:collapse;margin-top:20px;
+}
+.glass-table th{
+  font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.1em;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+  text-align:left;
+}
+.glass-table td{
+  padding:13px 16px;border-bottom:1px solid rgba(255,255,255,.04);
+  font-size:14px;color:var(--text2);vertical-align:top;
+}
+.glass-table tr:last-child td{border-bottom:none;}
+.glass-table tbody tr{transition:background .2s;}
+.glass-table tbody tr:hover td{background:rgba(255,255,255,.03);}
+.mono{
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  font-size:12px;color:var(--blue);
+}
+.status-badge{
+  display:inline-block;font-size:10.5px;font-weight:600;
+  padding:3px 9px;border-radius:6px;
+}
+.st-active{background:rgba(48,209,88,.15);color:var(--green);}
+.st-dep{background:rgba(255,159,10,.12);color:var(--orange);}
+.st-gemini{background:rgba(10,132,255,.15);color:var(--blue);}
+
+/* ─────────────────────────────────────────────────────────
+   INFO BOXES
+───────────────────────────────────────────────────────── */
+.info-box{
+  display:flex;gap:12px;align-items:flex-start;
+  padding:16px 18px;border-radius:12px;margin:16px 0;
+  background:rgba(10,132,255,.08);border:1px solid rgba(10,132,255,.2);
+  font-size:14px;color:var(--text2);line-height:1.6;
+}
+.info-box-icon{font-size:16px;flex-shrink:0;margin-top:1px;}
+.warn-box{
+  background:rgba(255,159,10,.08);border-color:rgba(255,159,10,.2);
+}
+
+/* ─────────────────────────────────────────────────────────
+   RESOURCE GRID
+───────────────────────────────────────────────────────── */
+.resource-grid{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));
+  gap:14px;margin-top:24px;
+}
+.resource-card{
+  padding:22px;text-decoration:none;color:inherit;position:relative;overflow:hidden;
+}
+.resource-card::after{
+  content:'↗';position:absolute;top:18px;right:20px;
+  font-size:16px;color:var(--text3);
+  transition:color .2s,transform .2s;
+}
+.resource-card:hover::after{color:var(--blue);transform:translate(2px,-2px);}
+.resource-card h4{
+  font-size:14px;font-weight:600;color:var(--text);
+  margin-bottom:6px;padding-right:28px;
+}
+.resource-card p{font-size:12.5px;color:var(--text2);margin:0;line-height:1.55;}
+.resource-repo{
+  font-family:ui-monospace,'SF Mono',Menlo,monospace;
+  font-size:10.5px;color:var(--text3);margin-top:10px;
+}
+.rc-phase{
+  display:inline-block;font-size:10px;font-weight:600;
+  padding:2px 8px;border-radius:6px;margin-top:8px;
+  background:rgba(255,159,10,.12);color:var(--orange);
+}
+
+/* ─────────────────────────────────────────────────────────
+   FOOTER
+───────────────────────────────────────────────────────── */
+.footer{
+  border-top:1px solid var(--border);padding:32px 64px;
+  font-size:13px;color:var(--text3);
+  display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:16px;
+}
+.footer a{color:var(--blue);text-decoration:none;}
+.footer a:hover{text-decoration:underline;}
+.footer-brand{
+  font-size:15px;font-weight:600;
+  background:linear-gradient(135deg,var(--text),var(--text2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+/* ─────────────────────────────────────────────────────────
+   TASKS TABLE
+───────────────────────────────────────────────────────── */
+.status-row td:first-child{color:var(--text);}
+
+/* ─────────────────────────────────────────────────────────
+   RESPONSIVE
+───────────────────────────────────────────────────────── */
+@media(max-width:860px){
+  .sidebar{display:none;}
+  .main{margin-left:0;}
+  .hero{flex-direction:column;padding:50px 24px;}
+  .hero-terminal{width:100%;}
+  .content{padding:40px 24px;}
+  .relay-flow{flex-wrap:wrap;}
+}
+</style>
+</head>
+<body>
+
+<!-- BACKGROUND -->
+<div class="mesh">
+  <div class="blob b1"></div>
+  <div class="blob b2"></div>
+  <div class="blob b3"></div>
+  <div class="blob b4"></div>
+</div>
+<div class="noise"></div>
+
+<!-- ══════════════════════════════════
+     SIDEBAR
+══════════════════════════════════ -->
+<nav class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-logo">Medina</div>
+    <div class="brand-tagline">Agentic Relay Setup</div>
+  </div>
+  <div class="nav-scroll">
+    <div class="nav-section">
+      <div class="nav-section-label">Start Here</div>
+      <a href="#overview" class="nav-link active"><span class="nav-icon">◎</span>Overview</a>
+      <a href="#prerequisites" class="nav-link"><span class="nav-icon">◈</span>Prerequisites</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Installation</div>
+      <a href="#install" class="nav-link"><span class="nav-icon">⊞</span>Windows &amp; Mac</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Reference</div>
+      <a href="#skills" class="nav-link"><span class="nav-icon">◇</span>Skills</a>
+      <a href="#hooks" class="nav-link"><span class="nav-icon">◉</span>Hooks &amp; Rules</a>
+      <a href="#commands" class="nav-link"><span class="nav-icon">▷</span>Commands</a>
+      <a href="#tasks" class="nav-link"><span class="nav-icon">◻</span>Tasks</a>
+      <a href="#relay" class="nav-link"><span class="nav-icon">⇌</span>Relay Architecture</a>
+    </div>
+    <div class="nav-section">
+      <div class="nav-section-label">Resources</div>
+      <a href="#resources" class="nav-link"><span class="nav-icon">◑</span>Repos &amp; Links</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════
+     MAIN
+══════════════════════════════════ -->
+<main class="main">
+
+<!-- HERO -->
+<div class="hero">
+  <div class="hero-left">
+    <div class="hero-eyebrow">
+      <span class="hero-eyebrow-dot"></span>
+      Skills-first · Multi-model relay
+    </div>
+    <h1 class="hero-title">
+      <span class="hero-title-main">Medina</span>
+      <span class="hero-title-accent">Agentic Relay</span>
+    </h1>
+    <p class="hero-subtitle">
+      A skills-first framework pairing Claude Code and Gemini CLI.
+      Claude plans and verifies. Gemini builds. Together they ship.
+    </p>
+    <div class="hero-ctas">
+      <a href="#install" class="btn-primary">Get Started →</a>
+      <a href="#relay" class="btn-ghost">See Architecture</a>
+    </div>
+  </div>
+  <div class="hero-right">
+    <div class="hero-terminal">
+      <div class="term-titlebar">
+        <div class="traffic">
+          <span></span><span></span><span></span>
+        </div>
+        <span class="term-name">medina-relay — zsh</span>
+      </div>
+      <div class="term-body" id="heroTerm">
+        <span class="tl"><span class="tp">✓</span> <span class="tc">Initializing Medina Agentic Relay...</span></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="content">
+
+<!-- ══════════════════════════════════
+     OVERVIEW
+══════════════════════════════════ -->
+<section id="overview" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Overview</div>
+  <h2>What is the <span class="gradient-text">Medina Relay</span>?</h2>
+  <p>
+    The Medina Agentic Relay assigns each phase of software development to the AI best suited for it.
+    Built on <strong style="color:var(--text)">obra/superpowers</strong> — a composable skills library —
+    and extended with <strong style="color:var(--text)">maestro-gemini</strong> for Gemini's build stage.
+  </p>
+
+  <!-- Interactive relay preview -->
+  <div id="relay-preview" class="relay-wrap">
+    <div class="relay-flow">
+
+      <div class="glass-card relay-node rn-blue" data-node="plan" onclick="toggleNode(this)">
+        <span class="rn-expand">+</span>
+        <div class="rn-model">Claude Code</div>
+        <div class="rn-stage">Ideate &amp; Plan</div>
+        <div class="rn-desc">Brainstorm, spec out, write the plan</div>
+        <div class="rn-tags">
+          <span class="rn-tag">brainstorming</span>
+          <span class="rn-tag">writing-plans</span>
+          <span class="rn-tag">worktrees</span>
+        </div>
+        <div class="rn-detail">
+          <div class="rn-detail-inner">
+            Claude runs the full superpowers design loop: collaborative brainstorming → approved spec → step-by-step implementation plan with exact file paths and test commands.
+          </div>
+        </div>
+      </div>
+
+      <div class="relay-arrow-wrap">
+        <svg class="relay-arrow-svg" viewBox="0 0 32 24" fill="none">
+          <defs>
+            <linearGradient id="ag1" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#0a84ff" stop-opacity=".4"/>
+              <stop offset="100%" stop-color="#5e5ce6" stop-opacity=".4"/>
+            </linearGradient>
+          </defs>
+          <line x1="2" y1="12" x2="24" y2="12" stroke="url(#ag1)" stroke-width="1.5" stroke-dasharray="3 3">
+            <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.2s" repeatCount="indefinite"/>
+          </line>
+          <polyline points="20,7 27,12 20,17" stroke="rgba(94,92,230,.6)" stroke-width="1.5" fill="none"/>
+        </svg>
+      </div>
+
+      <div class="glass-card relay-node rn-green" data-node="build" onclick="toggleNode(this)">
+        <span class="rn-expand">+</span>
+        <div class="rn-model">Gemini CLI</div>
+        <div class="rn-stage">Build</div>
+        <div class="rn-desc">Execute plan, commit code to repo</div>
+        <div class="rn-tags">
+          <span class="rn-tag">executing-plans</span>
+          <span class="rn-tag">/maestro:orchestrate</span>
+        </div>
+        <div class="rn-detail">
+          <div class="rn-detail-inner">
+            Gemini reads the self-contained plan and executes it. For complex parallel builds, maestro-gemini routes work to 22 specialist subagents. Simple sequential tasks use executing-plans.
+          </div>
+        </div>
+      </div>
+
+      <div class="relay-arrow-wrap">
+        <svg class="relay-arrow-svg" viewBox="0 0 32 24" fill="none">
+          <defs>
+            <linearGradient id="ag2" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#30d158" stop-opacity=".4"/>
+              <stop offset="100%" stop-color="#0a84ff" stop-opacity=".4"/>
+            </linearGradient>
+          </defs>
+          <line x1="2" y1="12" x2="24" y2="12" stroke="url(#ag2)" stroke-width="1.5" stroke-dasharray="3 3">
+            <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.2s" repeatCount="indefinite" begin=".4s"/>
+          </line>
+          <polyline points="20,7 27,12 20,17" stroke="rgba(10,132,255,.6)" stroke-width="1.5" fill="none"/>
+        </svg>
+      </div>
+
+      <div class="glass-card relay-node rn-blue" data-node="verify" onclick="toggleNode(this)">
+        <span class="rn-expand">+</span>
+        <div class="rn-model">Claude Code</div>
+        <div class="rn-stage">Test &amp; Verify</div>
+        <div class="rn-desc">Review, debug, confirm quality</div>
+        <div class="rn-tags">
+          <span class="rn-tag">verification</span>
+          <span class="rn-tag">debugging</span>
+          <span class="rn-tag">code-review</span>
+        </div>
+        <div class="rn-detail">
+          <div class="rn-detail-inner">
+            Claude reads Gemini's commits, runs verification-before-completion, dispatches systematic-debugging if tests fail, and completes a code review before allowing a merge.
+          </div>
+        </div>
+      </div>
+
+      <div class="relay-arrow-wrap">
+        <svg class="relay-arrow-svg" viewBox="0 0 32 24" fill="none">
+          <defs>
+            <linearGradient id="ag3" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#0a84ff" stop-opacity=".4"/>
+              <stop offset="100%" stop-color="#bf5af2" stop-opacity=".4"/>
+            </linearGradient>
+          </defs>
+          <line x1="2" y1="12" x2="24" y2="12" stroke="url(#ag3)" stroke-width="1.5" stroke-dasharray="3 3">
+            <animate attributeName="stroke-dashoffset" from="0" to="-12" dur="1.2s" repeatCount="indefinite" begin=".8s"/>
+          </line>
+          <polyline points="20,7 27,12 20,17" stroke="rgba(191,90,242,.6)" stroke-width="1.5" fill="none"/>
+        </svg>
+      </div>
+
+      <div class="glass-card relay-node rn-multi" data-node="deploy" onclick="toggleNode(this)">
+        <span class="rn-expand">+</span>
+        <div class="rn-model">Either</div>
+        <div class="rn-stage">Deploy</div>
+        <div class="rn-desc">Merge, PR, or ship</div>
+        <div class="rn-tags">
+          <span class="rn-tag">finishing-branch</span>
+        </div>
+        <div class="rn-detail">
+          <div class="rn-detail-inner">
+            Either model can handle deployment. finishing-a-development-branch presents structured options: direct merge, pull request, or cleanup. Both Claude and Gemini support it.
+          </div>
+        </div>
+      </div>
+
+    </div>
+    <p style="font-size:12px;color:var(--text3);margin-top:12px;text-align:center;">
+      ↑ Click any node to expand details
+    </p>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">◎</span>
+    <span><strong style="color:var(--text)">Skills-first:</strong> This framework builds Claude's reasoning quality before adding external integrations. MCP server connections (GitHub, Slack, databases) are Phase 2.</span>
+  </div>
+</section>
+
+<!-- PREREQUISITES -->
+<section id="prerequisites" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Prerequisites</div>
+  <h2>Before you start</h2>
+  <p>Ensure all of the following are installed and authenticated.</p>
+
+  <div class="prereq-grid">
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(48,209,88,.12);">🟢</div>
+      <div>
+        <strong>Node.js v18+</strong>
+        <span>Required for both CLIs. Check: <code>node --version</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(255,159,10,.12);">🔧</div>
+      <div>
+        <strong>Git</strong>
+        <span>Version control. Check: <code>git --version</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(10,132,255,.12);">🤖</div>
+      <div>
+        <strong>Claude Code CLI</strong>
+        <span>Install: <code>npm install -g @anthropic-ai/claude-code</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(191,90,242,.12);">✨</div>
+      <div>
+        <strong>Gemini CLI v0.35+</strong>
+        <span>Install: <code>npm install -g @google/gemini-cli</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(255,55,95,.12);">🔑</div>
+      <div>
+        <strong>Anthropic Account</strong>
+        <span>Sign up at <code>console.anthropic.com</code>, then <code>claude auth login</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(90,200,250,.12);">🔑</div>
+      <div>
+        <strong>Google / Gemini Access</strong>
+        <span>AI Studio or AI Ultra. Then <code>gemini auth login</code></span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- INSTALL -->
+<section id="install" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Installation</div>
+  <h2>Setup Guide</h2>
+  <p>Complete setup in 8 steps. Choose your platform below.</p>
+
+  <div class="os-toggle" id="osToggle">
+    <div class="os-toggle-pill" id="osPill"></div>
+    <div class="os-tab active" data-tab="win" onclick="switchOS(this)">
+      <span class="os-tab-icon">🪟</span> Windows
+    </div>
+    <div class="os-tab" data-tab="mac" onclick="switchOS(this)">
+      <span class="os-tab-icon">🍎</span> macOS
+    </div>
+  </div>
+
+  <!-- WINDOWS -->
+  <div class="os-pane active" id="pane-win">
+    <ol class="step-list">
+      <li class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Install Node.js and Git</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell — Run as Administrator</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-comment"># Install Node.js LTS and Git via winget</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">winget install OpenJS.NodeJS.LTS</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">winget install Git.Git</span></span>
+              <span class="tbb-div"><span class="c-comment"># Restart terminal, then verify</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">node --version &amp;&amp; git --version</span></span>
+              <span class="tbb-div"><span class="c-out">v24.x.x   git version 2.x.x</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install Claude Code and Gemini CLI</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">npm install -g @anthropic-ai/claude-code</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">npm install -g @google/gemini-cli</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">claude auth login</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini auth login</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Install obra/superpowers into Claude Code</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Inside a Claude Code conversation</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-comment"># Launch Claude Code first</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">claude</span></span>
+              <span class="tbb-div"><span class="c-comment"># Then in the conversation window:</span></span>
+              <span class="tbb-div"><span class="c-prompt">›</span> <span class="c-cmd">/plugin install superpowers@claude-plugins-official</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ superpowers installed successfully</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Clone anthropic-cookbook reference library</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">git clone https://github.com/anthropics/anthropic-cookbook.git "$env:USERPROFILE\.claude\anthropic-cookbook"</span></span>
+              <span class="tbb-div"><span class="c-out">Cloning into '...\.claude\anthropic-cookbook'...</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Resolving deltas: 100% (401 files)</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>Install maestro-gemini extension</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini extensions install https://github.com/josstei/maestro-gemini --consent</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Extension 'maestro' (1.4.0) installed</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini extensions list</span></span>
+              <span class="tbb-div"><span class="c-out">✓ maestro (1.4.0) — enabled · 22 specialist agents</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>Enable Gemini experimental agents</h4>
+          <p style="font-size:13px;margin-bottom:8px;">Edit or create <code style="font-family:ui-monospace,monospace;font-size:11px;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:4px;color:var(--blue);">%USERPROFILE%\.gemini\settings.json</code></p>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-comment"># If settings.json does not exist yet:</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">@' {"experimental":{"enableAgents":true}} '@ | Set-Content "$env:USERPROFILE\.gemini\settings.json"</span></span>
+              <span class="tbb-div"><span class="c-comment"># If it exists, add "experimental":{"enableAgents":true} while preserving other keys</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h4>Create the drift-detection hook</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">@'</span></span>
+              <span class="tbb-div"><span class="c-cmd">---</span></span>
+              <span class="tbb-div"><span class="c-cmd">name: long-run-drift-check</span></span>
+              <span class="tbb-div"><span class="c-cmd">enabled: true</span></span>
+              <span class="tbb-div"><span class="c-cmd">event: stop</span></span>
+              <span class="tbb-div"><span class="c-cmd">pattern: .*</span></span>
+              <span class="tbb-div"><span class="c-cmd">---</span></span>
+              <span class="tbb-div"><span class="c-cmd">⚠️ Before stopping: verify plan adherence, tests passing, no debug code left.</span></span>
+              <span class="tbb-div"><span class="c-cmd">'@ | Set-Content "$env:USERPROFILE\.claude\hookify.long-run-drift.local.md"</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <h4>Verify everything is working</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell — full verification</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">ls "$env:USERPROFILE\.claude\anthropic-cookbook\README.md" &amp;&amp; echo "✓ cookbook"</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ cookbook</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini extensions list | Select-String maestro</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ maestro (1.4.0)</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">ls "$env:USERPROFILE\.claude\hookify.long-run-drift.local.md" &amp;&amp; echo "✓ hook"</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ hook</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+
+  <!-- MAC -->
+  <div class="os-pane" id="pane-mac">
+    <ol class="step-list">
+      <li class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Install Homebrew (if not installed)</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal — zsh</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"</span></span>
+              <span class="tbb-div"><span class="c-ok">==&gt; Installation successful!</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install Node.js and Git</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">brew install node git</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">node --version &amp;&amp; git --version</span></span>
+              <span class="tbb-div"><span class="c-out">v24.x.x   git version 2.x.x</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Install Claude Code and Gemini CLI</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">npm install -g @anthropic-ai/claude-code</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">npm install -g @google/gemini-cli</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">claude auth login</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">gemini auth login</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Install obra/superpowers into Claude Code</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Claude Code — in-conversation</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">claude</span></span>
+              <span class="tbb-div"><span class="c-comment"># Inside Claude Code conversation:</span></span>
+              <span class="tbb-div"><span class="c-prompt">›</span> <span class="c-cmd">/plugin install superpowers@claude-plugins-official</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ superpowers installed successfully</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>Clone anthropic-cookbook</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">git clone https://github.com/anthropics/anthropic-cookbook.git ~/.claude/anthropic-cookbook</span></span>
+              <span class="tbb-div"><span class="c-out">Cloning into '/Users/you/.claude/anthropic-cookbook'...</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Resolving deltas: 100%</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>Install maestro-gemini and enable agents</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">gemini extensions install https://github.com/josstei/maestro-gemini --consent</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Extension 'maestro' (1.4.0) installed</span></span>
+              <span class="tbb-div"><span class="c-comment"># Enable experimental agents (merge if settings.json already exists)</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">echo '{"experimental":{"enableAgents":true}}' > ~/.gemini/settings.json</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <h4>Create the drift-detection hook</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cat &gt; ~/.claude/hookify.long-run-drift.local.md &lt;&lt; 'EOF'</span></span>
+              <span class="tbb-div"><span class="c-cmd">---</span></span>
+              <span class="tbb-div"><span class="c-cmd">name: long-run-drift-check</span></span>
+              <span class="tbb-div"><span class="c-cmd">enabled: true</span></span>
+              <span class="tbb-div"><span class="c-cmd">event: stop</span></span>
+              <span class="tbb-div"><span class="c-cmd">pattern: .*</span></span>
+              <span class="tbb-div"><span class="c-cmd">---</span></span>
+              <span class="tbb-div"><span class="c-cmd">⚠️ Before stopping: verify plan adherence, tests passing, no debug code left.</span></span>
+              <span class="tbb-div"><span class="c-cmd">EOF</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <h4>Verify everything is working</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal — verification</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">ls ~/.claude/anthropic-cookbook/README.md &amp;&amp; echo "✓ cookbook"</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ cookbook</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">gemini extensions list | grep maestro</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ maestro (1.4.0)</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">ls ~/.claude/hookify.long-run-drift.local.md &amp;&amp; echo "✓ hook"</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ hook</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- SKILLS -->
+<section id="skills" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Reference</div>
+  <h2>Skills</h2>
+  <p>Skills are prompt-driven workflows that trigger automatically. Filter by category:</p>
+
+  <div class="skills-filter">
+    <div class="filter-pill active" data-filter="all" onclick="filterSkills(this)">All</div>
+    <div class="filter-pill" data-filter="workflow" onclick="filterSkills(this)">Workflow</div>
+    <div class="filter-pill" data-filter="quality" onclick="filterSkills(this)">Quality</div>
+    <div class="filter-pill" data-filter="debug" onclick="filterSkills(this)">Debug</div>
+    <div class="filter-pill" data-filter="review" onclick="filterSkills(this)">Review</div>
+    <div class="filter-pill" data-filter="setup" onclick="filterSkills(this)">Setup</div>
+    <div class="filter-pill" data-filter="utility" onclick="filterSkills(this)">Utility</div>
+  </div>
+
+  <div class="skills-grid">
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>brainstorming</h4><p>Collaborative design dialogue. Turns rough ideas into fully-formed specs before any code is written.</p><div class="sk-meta">triggers → new feature requests</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>writing-plans</h4><p>Converts an approved spec into a step-by-step implementation plan with exact paths, test commands, and commits.</p><div class="sk-meta">triggers → after brainstorming approval</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>subagent-driven-development</h4><p>Executes a plan with a fresh subagent per task. Two-stage review (spec compliance + code quality) after each task.</p><div class="sk-meta">best for → most implementation work</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>executing-plans</h4><p>Executes a plan inline with review checkpoints. Fallback when subagent dispatch isn't available — e.g., Gemini build stage.</p><div class="sk-meta">best for → Gemini builds, sequential tasks</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>dispatching-parallel-agents</h4><p>Launches multiple independent subagents simultaneously. Speeds up work with no shared state or sequential dependencies.</p><div class="sk-meta">best for → 2+ independent tasks</div></div>
+    <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>test-driven-development</h4><p>Enforces red/green TDD. Write failing test → confirm it fails → write minimal code → confirm it passes → commit.</p><div class="sk-meta">triggers → any implementation task</div></div>
+    <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>verification-before-completion</h4><p>Runs a verification checklist before claiming any task is done. Prevents saying "done" without confirming output.</p><div class="sk-meta">triggers → before completion claims</div></div>
+    <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>simplify</h4><p>Reviews recently changed code for reuse opportunities, quality issues, and efficiency improvements, then fixes them.</p><div class="sk-meta">triggers → after implementation</div></div>
+    <div class="glass-card skill-card" data-cat="debug"><span class="sk-badge sk-debug">Debug</span><h4>systematic-debugging</h4><p>Structured bug diagnosis. Identify symptom → hypothesize causes → test each → fix root cause. Not trial-and-error.</p><div class="sk-meta">triggers → any bug or test failure</div></div>
+    <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>requesting-code-review</h4><p>Structures and dispatches a code review request with full context, diff, and questions. Ensures review happens before merge.</p><div class="sk-meta">triggers → before merging</div></div>
+    <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>receiving-code-review</h4><p>Handles review feedback with rigor. Verifies technical claims before agreeing, asks for clarification on vague notes.</p><div class="sk-meta">triggers → on review feedback received</div></div>
+    <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>finishing-a-development-branch</h4><p>Guides branch completion. Presents structured options: direct merge, PR, or cleanup. Verifies tests before any action.</p><div class="sk-meta">triggers → when implementation complete</div></div>
+    <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>using-git-worktrees</h4><p>Creates isolated git worktrees for feature work. Smart directory selection and safety verification before any changes.</p><div class="sk-meta">triggers → new feature branches</div></div>
+    <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>using-superpowers</h4><p>Framework entry point and skill discovery hub. Loads every conversation to ensure the right skill fires at the right time.</p><div class="sk-meta">triggers → every conversation start</div></div>
+    <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>writing-skills</h4><p>Meta-skill for creating new reusable skills. When a recurring pattern emerges, use this to codify it permanently.</p><div class="sk-meta">triggers → new skill creation requests</div></div>
+    <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>update-config</h4><p>Configures Claude Code via settings.json. Sets up automated hooks for recurring behaviors ("from now on when X").</p><div class="sk-meta">triggers → config change requests</div></div>
+    <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>keybindings-help</h4><p>Customizes keyboard shortcuts in Claude Code. Add chord shortcuts, rebind any action, change the submit key.</p><div class="sk-meta">triggers → keybinding requests</div></div>
+    <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>loop</h4><p>Runs a prompt or command on a recurring interval (e.g., every 5 minutes). Good for polling, monitoring, and repeating tasks.</p><div class="sk-meta">triggers → recurring task requests</div></div>
+    <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>schedule</h4><p>Creates and manages scheduled remote agents on a cron schedule. Full cron job management for Claude Code agents.</p><div class="sk-meta">triggers → cron/schedule requests</div></div>
+    <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>claude-api</h4><p>Builds applications using the Claude API or Anthropic SDK. Triggers when code imports from @anthropic-ai or when building Claude-powered apps.</p><div class="sk-meta">triggers → anthropic SDK imports</div></div>
+  </div>
+</section>
+
+<!-- HOOKS -->
+<section id="hooks" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Reference</div>
+  <h2>Hooks &amp; Rules</h2>
+  <p>Hookify rules are markdown files in <code style="font-family:ui-monospace,monospace;font-size:12px;background:rgba(255,255,255,.08);padding:2px 6px;border-radius:4px;color:var(--blue);">~/.claude/hookify.{name}.local.md</code> that fire on events and show Claude a message or block an action.</p>
+  <p style="font-size:13px;color:var(--text3);margin-top:-8px;">Click any rule to expand its configuration.</p>
+
+  <div class="hook-list">
+    <div class="glass-card hook-card" onclick="toggleHook(this)">
+      <div class="hook-header">
+        <div class="hook-header-left">
+          <div class="hook-icon" style="background:rgba(48,209,88,.12);">🛑</div>
+          <div>
+            <div class="hook-name">long-run-drift-check <small>— active in this setup</small></div>
+          </div>
+        </div>
+        <div class="hook-right">
+          <span class="event-badge ev-stop">stop</span>
+          <span class="hook-chevron">›</span>
+        </div>
+      </div>
+      <div class="hook-body">
+        <div class="hook-body-inner">
+          <p class="hook-desc">Fires every time Claude is about to complete a session. Presents a 9-item checklist covering plan adherence, test status, build state, and relay handoff quality. Primary guard against silent failures on long autonomous runs.</p>
+          <div class="fm-block"><span class="fm-k">name:</span> <span class="fm-v">long-run-drift-check</span>
+<span class="fm-k">enabled:</span> <span class="fm-v">true</span>
+<span class="fm-k">event:</span> <span class="fm-v">stop</span>
+<span class="fm-k">pattern:</span> <span class="fm-v">.*</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card hook-card" onclick="toggleHook(this)">
+      <div class="hook-header">
+        <div class="hook-header-left">
+          <div class="hook-icon" style="background:rgba(255,69,58,.12);">⛔</div>
+          <div><div class="hook-name">block-dangerous-rm</div></div>
+        </div>
+        <div class="hook-right">
+          <span class="event-badge ev-bash">bash</span>
+          <span class="hook-chevron">›</span>
+        </div>
+      </div>
+      <div class="hook-body">
+        <div class="hook-body-inner">
+          <p class="hook-desc">Hard blocks <code style="font-family:ui-monospace,monospace;font-size:11px;">rm -rf</code> and similar destructive shell patterns before they execute. The command will not run.</p>
+          <div class="fm-block"><span class="fm-k">event:</span> <span class="fm-v">bash</span>
+<span class="fm-k">pattern:</span> <span class="fm-v">rm\s+-rf</span>
+<span class="fm-k">action:</span> <span class="fm-v">block</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card hook-card" onclick="toggleHook(this)">
+      <div class="hook-header">
+        <div class="hook-header-left">
+          <div class="hook-icon" style="background:rgba(255,159,10,.12);">⚠️</div>
+          <div><div class="hook-name">console-log-warning</div></div>
+        </div>
+        <div class="hook-right">
+          <span class="event-badge ev-file">file</span>
+          <span class="hook-chevron">›</span>
+        </div>
+      </div>
+      <div class="hook-body">
+        <div class="hook-body-inner">
+          <p class="hook-desc">Warns Claude when writing <code style="font-family:ui-monospace,monospace;font-size:11px;">console.log()</code> to a source file. Allows the write but explains why debug logs should not ship to production.</p>
+          <div class="fm-block"><span class="fm-k">event:</span> <span class="fm-v">file</span>
+<span class="fm-k">pattern:</span> <span class="fm-v">console\.log\(</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="glass-card hook-card" onclick="toggleHook(this)">
+      <div class="hook-header">
+        <div class="hook-header-left">
+          <div class="hook-icon" style="background:rgba(10,132,255,.12);">🔐</div>
+          <div><div class="hook-name">sensitive-files-warning</div></div>
+        </div>
+        <div class="hook-right">
+          <span class="event-badge ev-file">file</span>
+          <span class="hook-chevron">›</span>
+        </div>
+      </div>
+      <div class="hook-body">
+        <div class="hook-body-inner">
+          <p class="hook-desc">Warns when editing <code style="font-family:ui-monospace,monospace;font-size:11px;">.env</code> files or credential files. Reminds Claude to verify .gitignore and avoid committing secrets.</p>
+          <div class="fm-block"><span class="fm-k">event:</span> <span class="fm-v">file</span>
+<span class="fm-k">conditions:</span>
+  <span class="fm-k">- field:</span> <span class="fm-v">file_path</span>
+    <span class="fm-k">operator:</span> <span class="fm-v">regex_match</span>
+    <span class="fm-k">pattern:</span> <span class="fm-v">\.env$|credentials</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMMANDS -->
+<section id="commands" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Reference</div>
+  <h2>Commands</h2>
+  <p>Slash commands available in Claude Code and Gemini CLI conversations.</p>
+
+  <table class="glass-table">
+    <thead>
+      <tr><th>Command</th><th>Description</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="mono">/skills</td><td>Opens the skills browser — all available skills and descriptions</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/sync-superpowers</td><td>Pulls the latest superpowers from GitHub, refreshes all local skills</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/commit</td><td>Creates a git commit with a generated message. Respects hooks and sign-off</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/update-config</td><td>Opens the config skill to modify settings.json and configure automated hooks</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/brainstorm</td><td>Triggers design dialogue for a new feature or idea</td><td><span class="status-badge st-dep">→ brainstorming skill</span></td></tr>
+      <tr><td class="mono">/write-plan</td><td>Creates an implementation plan from a spec</td><td><span class="status-badge st-dep">→ writing-plans skill</span></td></tr>
+      <tr><td class="mono">/execute-plan</td><td>Executes a previously written plan</td><td><span class="status-badge st-dep">→ executing-plans skill</span></td></tr>
+      <tr><td class="mono">/maestro:orchestrate</td><td>Launches the maestro multi-agent orchestrator in Gemini CLI</td><td><span class="status-badge st-gemini">Gemini CLI</span></td></tr>
+      <tr><td class="mono">/maestro:help</td><td>Shows maestro commands and all 22 available specialist agents</td><td><span class="status-badge st-gemini">Gemini CLI</span></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- TASKS -->
+<section id="tasks" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Reference</div>
+  <h2>Tasks</h2>
+  <p>Tasks are session-scoped progress units tracked via <span class="mono">TaskCreate</span> / <span class="mono">TaskUpdate</span> / <span class="mono">TaskList</span>. They make long workflows transparent and auditable.</p>
+
+  <table class="glass-table">
+    <thead><tr><th>Status</th><th>Meaning</th><th>Set When</th></tr></thead>
+    <tbody>
+      <tr class="status-row"><td><span class="status-badge st-active">pending</span></td><td>Created, not yet started</td><td>At task creation</td></tr>
+      <tr class="status-row"><td><span class="status-badge st-gemini">in_progress</span></td><td>Actively being worked on</td><td>Before starting work on a task</td></tr>
+      <tr class="status-row"><td><span class="status-badge st-active">completed</span></td><td>Fully done and verified</td><td>After confirming correctness</td></tr>
+      <tr class="status-row"><td><span class="status-badge" style="background:rgba(255,69,58,.12);color:#ff453a;">deleted</span></td><td>Superseded or cancelled</td><td>When a task is no longer relevant</td></tr>
+    </tbody>
+  </table>
+
+  <div class="info-box" style="margin-top:20px;">
+    <span class="info-box-icon">◎</span>
+    <span>Use tasks for any operation with 3+ distinct steps. The brainstorming and subagent-driven-development skills create and update tasks automatically.</span>
+  </div>
+</section>
+
+<!-- RELAY ARCHITECTURE -->
+<section id="relay" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Architecture</div>
+  <h2>Relay <span class="gradient-text">Architecture</span></h2>
+  <p>
+    The spec and implementation plan are the <strong style="color:var(--text)">API between models</strong>.
+    Claude writes them with enough precision that Gemini can execute without any context from the planning conversation.
+  </p>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Handoff Rules</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Rule</th><th>Reason</th></tr></thead>
+      <tbody>
+        <tr><td><strong style="color:var(--text)">Mark parallelism explicitly</strong></td><td>Gemini's subagent scheduler routes to specialists — it needs clear task boundaries. Claude's <span class="mono">Task</span> tool spawns dynamically; Gemini cannot match this exactly.</td></tr>
+        <tr><td><strong style="color:var(--text)">Self-contained task descriptions</strong></td><td>Each plan task must be understandable with zero context from the planning conversation. Claude has that context; Gemini will not.</td></tr>
+        <tr><td><strong style="color:var(--text)">Reference outcomes, not tool names</strong></td><td>Gemini's tools differ from Claude's. Write "read the config file" not "use the Read tool".</td></tr>
+        <tr><td><strong style="color:var(--text)">Complex builds stay on Claude</strong></td><td>When a build requires dynamic subagent dispatch across many files, Claude's subagent-driven-development skill is more reliable than Gemini's specialist routing.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- RESOURCES -->
+<section id="resources" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Resources</div>
+  <h2>Repos &amp; Links</h2>
+  <p>Everything that powers this setup.</p>
+
+  <div class="resource-grid">
+    <a class="glass-card resource-card" href="https://github.com/obra/superpowers" target="_blank">
+      <h4>obra/superpowers</h4>
+      <p>Core skills framework. Full development cycle: brainstorm → plan → TDD → subagent-dev → review → ship.</p>
+      <div class="resource-repo">github.com/obra/superpowers</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/anthropics/anthropic-cookbook" target="_blank">
+      <h4>anthropics/anthropic-cookbook</h4>
+      <p>Multi-agent patterns, tool use best practices, prompt caching, long-horizon tasks. Reference library for Claude's planning quality.</p>
+      <div class="resource-repo">github.com/anthropics/anthropic-cookbook</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/josstei/maestro-gemini" target="_blank">
+      <h4>josstei/maestro-gemini</h4>
+      <p>Gemini CLI extension. 22 specialist subagent roles, parallel dispatch, MCP server. Bridges Gemini's routing to Claude-style orchestration.</p>
+      <div class="resource-repo">github.com/josstei/maestro-gemini</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/punkpeye/awesome-mcp-servers" target="_blank">
+      <h4>punkpeye/awesome-mcp-servers</h4>
+      <p>Curated MCP server index. When ready for Phase 2 external integrations, start here.</p>
+      <div class="resource-repo">github.com/punkpeye/awesome-mcp-servers</div>
+      <div class="rc-phase">Phase 2</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/anthropics/claude-code-action" target="_blank">
+      <h4>anthropics/claude-code-action</h4>
+      <p>GitHub Action that runs Claude Code in CI. Automate PR review, issue triage, and build verification.</p>
+      <div class="resource-repo">github.com/anthropics/claude-code-action</div>
+      <div class="rc-phase">Phase 2</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/google-gemini/gemini-cli" target="_blank">
+      <h4>google-gemini/gemini-cli</h4>
+      <p>Official Gemini CLI. v0.35.x with experimental subagents enabled by default. The build-stage tool in the relay.</p>
+      <div class="resource-repo">github.com/google-gemini/gemini-cli</div>
+    </a>
+  </div>
+</section>
+
+</div><!-- /content -->
+
+<div class="footer">
+  <div class="footer-brand">Medina Agentic Relay</div>
+  <div>Skills-first · Claude + Gemini relay · obra/superpowers + maestro-gemini</div>
+  <div>Built with <a href="https://claude.ai/code">Claude Code</a></div>
+</div>
+
+</main>
+
+<!-- ══════════════════════════════════
+     JAVASCRIPT
+══════════════════════════════════ -->
+<script>
+/* ── OS TOGGLE ─────────────────────────────────────── */
+function switchOS(tab){
+  const tabs = document.querySelectorAll('.os-tab');
+  const panes = document.querySelectorAll('.os-pane');
+  const pill = document.getElementById('osPill');
+  tabs.forEach(t=>t.classList.remove('active'));
+  panes.forEach(p=>p.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('pane-'+tab.dataset.tab).classList.add('active');
+  const idx = Array.from(tabs).indexOf(tab);
+  const tw = tab.offsetWidth;
+  pill.style.width = tw+'px';
+  pill.style.transform = 'translateX('+(idx*(tw))+'px)';
+}
+window.addEventListener('DOMContentLoaded',()=>{
+  const activeTab = document.querySelector('.os-tab.active');
+  if(activeTab){
+    const pill = document.getElementById('osPill');
+    pill.style.width = activeTab.offsetWidth+'px';
+    pill.style.transform = 'translateX(0)';
+  }
+});
+
+/* ── RELAY NODE TOGGLE ─────────────────────────────── */
+function toggleNode(node){
+  const wasActive = node.classList.contains('active');
+  document.querySelectorAll('.relay-node').forEach(n=>n.classList.remove('active'));
+  if(!wasActive) node.classList.add('active');
+}
+
+/* ── HOOK TOGGLE ───────────────────────────────────── */
+function toggleHook(card){
+  const wasExpanded = card.classList.contains('expanded');
+  document.querySelectorAll('.hook-card').forEach(c=>c.classList.remove('expanded'));
+  if(!wasExpanded) card.classList.add('expanded');
+}
+
+/* ── SKILL FILTER ──────────────────────────────────── */
+function filterSkills(pill){
+  document.querySelectorAll('.filter-pill').forEach(p=>p.classList.remove('active'));
+  pill.classList.add('active');
+  const filter = pill.dataset.filter;
+  document.querySelectorAll('.skill-card').forEach(card=>{
+    const match = filter==='all' || card.dataset.cat===filter;
+    card.classList.toggle('hidden', !match);
+  });
+}
+
+/* ── COPY BLOCKS ───────────────────────────────────── */
+function copyTB(btn){
+  const body = btn.closest('.term-block').querySelector('.tb-body');
+  const lines = Array.from(body.querySelectorAll('.tbb-div'))
+    .map(d=>{
+      const cmd = d.querySelector('.c-cmd');
+      return cmd ? cmd.textContent.trim() : '';
+    })
+    .filter(l=>l && !l.startsWith('---') && !l.startsWith('name:') && !l.startsWith('enabled:') && !l.startsWith('event:') && !l.startsWith('pattern:') || l.match(/^(winget|npm|git|gemini|claude|brew|node|echo|ls|cat|@'|'@|\$env|node|Set-Content)/));
+
+  const text = Array.from(body.querySelectorAll('.c-cmd,.c-prompt'))
+    .reduce((acc,el,i,arr)=>{
+      if(el.classList.contains('c-prompt')) return acc;
+      return acc+el.textContent.trim()+'\n';
+    },'').trim();
+
+  navigator.clipboard.writeText(text||lines.join('\n')).then(()=>{
+    btn.textContent='✓ Copied';
+    btn.classList.add('ok');
+    setTimeout(()=>{btn.textContent='Copy';btn.classList.remove('ok');},2000);
+  }).catch(()=>{
+    btn.textContent='✓';
+    setTimeout(()=>{btn.textContent='Copy';},1500);
+  });
+}
+
+/* ── SCROLL REVEAL ─────────────────────────────────── */
+const revealObs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting) e.target.classList.add('visible');
+  });
+},{threshold:.08,rootMargin:'0px 0px -60px 0px'});
+document.querySelectorAll('.reveal').forEach(el=>revealObs.observe(el));
+
+/* ── SIDEBAR ACTIVE STATE ──────────────────────────── */
+const navObs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      document.querySelectorAll('.nav-link').forEach(n=>{
+        n.classList.toggle('active', n.getAttribute('href')==='#'+e.target.id);
+      });
+    }
+  });
+},{threshold:.25,rootMargin:'-10% 0px -65% 0px'});
+document.querySelectorAll('section[id]').forEach(s=>navObs.observe(s));
+
+/* ── HERO TERMINAL ANIMATION ───────────────────────── */
+(function(){
+  const term = document.getElementById('heroTerm');
+  const seq = [
+    {t:'cmd',  p:'$', s:'git clone https://github.com/anthropics/anthropic-cookbook.git ~/.claude/anthropic-cookbook'},
+    {t:'out',  s:"Cloning into '.claude/anthropic-cookbook'..."},
+    {t:'ok',   s:'✓ 401 files cloned — tool_use/ patterns/ multiagent/ ready'},
+    {t:'gap'},
+    {t:'cmd',  p:'$', s:'gemini extensions install https://github.com/josstei/maestro-gemini --consent'},
+    {t:'ok',   s:"✓ Extension 'maestro' (1.4.0) installed · 22 specialist agents"},
+    {t:'gap'},
+    {t:'cmd',  p:'$', s:'gemini extensions list'},
+    {t:'out',  s:'✓ maestro (1.4.0)  enabled · MCP: maestro-server.js'},
+    {t:'gap'},
+    {t:'done', s:'🚀 Medina Agentic Relay — ready.'},
+  ];
+  let idx=0,cur=null,span=null,ci=0;
+  const cur$ = document.createElement('span');
+  cur$.className='cursor-blink';
+
+  function clsFor(t){
+    return {cmd:'tc',out:'to',ok:'tp',done:'ts',gap:''}[t]||'tc';
+  }
+  function nextLine(){
+    if(idx>=seq.length) return;
+    const item=seq[idx++];
+    if(item.t==='gap'){
+      const b=document.createElement('span');b.className='tl';b.innerHTML='&nbsp;';
+      term.appendChild(b);setTimeout(nextLine,180);return;
+    }
+    cur=document.createElement('span');cur.className='tl';
+    if(item.t==='cmd'){
+      const p=document.createElement('span');p.className='tp';p.textContent=item.p+' ';cur.appendChild(p);
+    }
+    span=document.createElement('span');span.className=clsFor(item.t);cur.appendChild(span);
+    cur.appendChild(cur$);term.appendChild(cur);term.scrollTop=term.scrollHeight;
+    ci=0;typeChar(item);
+  }
+  function typeChar(item){
+    if(ci<item.s.length){
+      span.textContent+=item.s[ci++];term.scrollTop=term.scrollHeight;
+      const d=item.t==='cmd'?(Math.random()*45+18):8;
+      setTimeout(()=>typeChar(item),d);
+    } else {
+      cur.removeChild(cur$);
+      setTimeout(nextLine,item.t==='cmd'?550:280);
+    }
+  }
+  setTimeout(nextLine,900);
+})();
+</script>
+</body>
+</html>
