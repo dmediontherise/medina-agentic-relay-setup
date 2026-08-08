@@ -96,7 +96,7 @@ cd medina-agentic-relay-setup
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null
 Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force
 Copy-Item relay\charters  "$env:USERPROFILE\.claude\relay\" -Recurse -Force
-Copy-Item relay\commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
+Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 ```
 
 **macOS / Linux**
@@ -107,7 +107,7 @@ cd medina-agentic-relay-setup
 mkdir -p ~/.claude/relay ~/.claude/commands
 cp relay/relay.sh ~/.claude/relay/
 cp -r relay/charters ~/.claude/relay/
-cp relay/commands/*.md ~/.claude/commands/
+cp commands/*.md ~/.claude/commands/
 chmod +x ~/.claude/relay/relay.sh
 ```
 
@@ -262,14 +262,14 @@ stubs — and read the assertion bodies itself.
 relay/
 ├── relay.ps1              Windows / psmux control plane
 ├── relay.sh               macOS / Linux / tmux control plane
-├── charters/              agent operating contracts
-│   ├── executor.md
-│   ├── scout.md
-│   └── validator.md
-└── commands/              Claude Code slash commands
-    ├── relay-up.md
-    ├── relay-task.md
-    ├── relay-status.md
-    └── relay-down.md
+└── charters/              agent operating contracts
+    ├── executor.md
+    ├── scout.md
+    └── validator.md
+commands/                  Claude Code slash commands
+├── relay-up.md            bring the relay up
+├── relay-task.md          run a full cycle
+├── relay-status.md        health and bus contents
+└── relay-down.md          tear it down
 index.html                 setup guide site
 ```
