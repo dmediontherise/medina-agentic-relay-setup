@@ -14,8 +14,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('up', 'down', 'status', 'send', 'dispatch', 'capture', 'wait', 'attach', 'bus')]
+    [ValidateSet('new', 'up', 'down', 'status', 'send', 'dispatch', 'capture', 'wait', 'attach', 'bus')]
     [string]$Command = 'status',
+
+    # Positional so 'relay new my-app' reads the way you would say it.
+    [Parameter(Position = 1)]
+    [string]$Name,
 
     [string]$Workspace,
     [ValidateSet('executor', 'validator', 'scout')]
@@ -121,6 +125,150 @@ function New-BusDirs($ws) {
     foreach ($d in 'tasks', 'results', 'evidence', 'reports', 'logs') {
         New-Item -ItemType Directory -Force (Join-Path $ws ".relay\$d") | Out-Null
     }
+}
+
+# ============================================================= NEW ===========
+# Scaffold a project and bring the relay up on it in one command. This block
+# deliberately does NOT exit - it prepares the workspace, then rewrites $Command
+# to 'up' and falls through, so there is exactly one implementation of 'up'.
+if ($Command -eq 'new') {
+    if (-not $Name) { Fail "Usage: relay.ps1 new <project-name|path>" }
+
+    $target = $Name
+    if (-not [System.IO.Path]::IsPathRooted($target)) {
+        $target = Join-Path (Get-Location).Path $Name
+    }
+
+    # Never scaffold over existing work. An empty directory is fine to adopt.
+    if (Test-Path $target) {
+        $existing = @(Get-ChildItem -Force $target -EA 0)
+        if ($existing.Count -gt 0) {
+            Fail "$target already exists and is not empty. Use 'up -Workspace `"$target`"' to run the relay on it as-is."
+        }
+    }
+    else {
+        New-Item -ItemType Directory -Force $target | Out-Null
+    }
+    $target = (Resolve-Path $target).Path
+    $projName = Split-Path -Leaf $target
+    Say "Created  $target"
+
+    # --- git -----------------------------------------------------------------
+    # The scout reads 'git diff' as its primary evidence, so a repo is not
+    # optional here - without one it has nothing authoritative to compare against.
+    $hasGit = [bool](Get-Command git -ErrorAction SilentlyContinue)
+    if (-not $hasGit) {
+        Write-Host "[relay] WARNING: git not found. The scout falls back to file listings," -ForegroundColor Yellow
+        Write-Host "        which is weaker evidence than a diff." -ForegroundColor Yellow
+    }
+
+    # The whole bus is ignored on purpose. These are coordination artifacts, not
+    # source - and keeping them untracked means the scout's 'git status --short'
+    # shows exactly what the executor changed in the codebase, which is the
+    # signal the relay exists to produce. The artifacts still live on disk.
+    $gitignore = @(
+        '# Relay coordination bus - artifacts stay on disk, out of version control'
+        '.relay/'
+        ''
+        '# Editors / OS'
+        '.vscode/'
+        '.idea/'
+        '.DS_Store'
+        'Thumbs.db'
+        ''
+        '# Common build & dependency output'
+        'node_modules/'
+        'dist/'
+        'build/'
+        'target/'
+        '__pycache__/'
+        '*.py[cod]'
+        '.venv/'
+        'venv/'
+        ''
+        '# Logs & local env'
+        '*.log'
+        '.env'
+        '.env.local'
+        ''
+    ) -join "`r`n"
+    Set-Content (Join-Path $target '.gitignore') $gitignore -Encoding utf8
+
+    $readme = @(
+        "# $projName"
+        ''
+        'Worked on with the [Medina Agentic Relay](https://github.com/dmediontherise/medina-agentic-relay-setup).'
+        ''
+        '## Relay'
+        ''
+        '```'
+        'relay status                      # session health and bus contents'
+        'relay capture -Agent executor     # is that pane working, or stuck on a prompt?'
+        'relay down                        # tear it down'
+        '```'
+        ''
+        'Task specs live in `.relay/tasks/`. Verdicts land in `.relay/reports/`.'
+        ''
+    ) -join "`r`n"
+    Set-Content (Join-Path $target 'README.md') $readme -Encoding utf8
+
+    if ($hasGit) {
+        Push-Location $target
+        try {
+            git init -q 2>&1 | Out-Null
+            git add -A 2>&1 | Out-Null
+            $commitOut = git commit -q -m "Initial commit" 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                # Almost always missing user.name/user.email. Say which, rather
+                # than leaving a repo with a silently empty history.
+                Write-Host "[relay] WARNING: git commit failed - repo initialized but nothing committed." -ForegroundColor Yellow
+                Write-Host "        $commitOut" -ForegroundColor Yellow
+            }
+            else { Say "git init + initial commit" }
+        }
+        finally { Pop-Location }
+    }
+
+    # --- seed a task the executor can actually be pointed at ------------------
+    New-BusDirs $target
+    $seed = @(
+        '# Task 001: <title>'
+        ''
+        '## Objective'
+        '<What "done" means, in one or two sentences.>'
+        ''
+        '## Scope'
+        '- In:  <files or areas the executor may touch>'
+        '- Out: <explicitly off-limits>'
+        ''
+        '## Requirements'
+        '<Numbered and individually verifiable. The validator grades against THIS'
+        'file, so anything vague here produces a worthless verdict. Write them so'
+        'someone who did not read this conversation could check them.>'
+        ''
+        '1. '
+        '2. '
+        ''
+        '## Verification'
+        '<Commands that must pass, with the expected outcome. The scout re-runs'
+        'every one of these itself rather than trusting the executor.>'
+        ''
+        '- `<command>` -> <expected>'
+        ''
+        '## Artifacts'
+        '- results:  `.relay/results/001-first-task.md`'
+        '- evidence: `.relay/evidence/001-first-task.md`'
+        '- report:   `.relay/reports/001-first-task.md`'
+        ''
+    ) -join "`r`n"
+    $seedPath = Join-Path $target '.relay\tasks\001-first-task.md'
+    Set-Content $seedPath $seed -Encoding utf8
+    Say "Seeded   .relay\tasks\001-first-task.md"
+
+    # Hand off to 'up' below rather than reimplementing it.
+    $Workspace = $target
+    $Command   = 'up'
+    $script:ScaffoldedNew = $true
 }
 
 # ============================================================== UP ===========
@@ -280,6 +428,13 @@ if ($Command -eq 'up') {
     Say "  scout     (claude sonnet)               -> $($ids['2'])"
     Say "  bus watch                               -> $($ids['3'])"
     Say "Attach with: psmux attach -t $Session"
+    if ($script:ScaffoldedNew) {
+        Write-Host ""
+        Write-Host "  Next:" -ForegroundColor White
+        Write-Host "    1. Fill in .relay\tasks\001-first-task.md (requirements + verification)" -ForegroundColor Gray
+        Write-Host "    2. Run /relay-task in Claude Code from $Workspace" -ForegroundColor Gray
+        Write-Host "       or dispatch by hand:  relay dispatch -Agent executor -Task .relay\tasks\001-first-task.md" -ForegroundColor Gray
+    }
     exit 0
 }
 

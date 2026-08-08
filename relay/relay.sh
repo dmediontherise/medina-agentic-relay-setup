@@ -65,6 +65,7 @@ usage() {
   cat <<'EOF'
 Medina Agentic Relay - tmux control plane
 
+  relay.sh new  <project-name|path>         Scaffold a project, then bring the relay up on it
   relay.sh up   [-w <workspace>] [--safe]   Build the session and boot the agents
   relay.sh down                             Tear the session down
   relay.sh status                           Session health, pane state, bus contents
@@ -77,6 +78,128 @@ Medina Agentic Relay - tmux control plane
 
   agents: executor | validator | scout
 EOF
+}
+
+# ============================================================== NEW ==========
+# Scaffold a project and bring the relay up on it in one command.
+cmd_new() {
+  local name="${1:-}"
+  [ -n "$name" ] || fail "Usage: relay.sh new <project-name|path>"
+
+  local target="$name"
+  case "$target" in /*) ;; *) target="$PWD/$name" ;; esac
+
+  # Never scaffold over existing work. An empty directory is fine to adopt.
+  if [ -e "$target" ]; then
+    if [ -n "$(ls -A "$target" 2>/dev/null)" ]; then
+      fail "$target already exists and is not empty. Use 'up -w \"$target\"' to run the relay on it as-is."
+    fi
+  else
+    mkdir -p "$target"
+  fi
+  target="$(cd "$target" && pwd)"
+  local proj; proj="$(basename "$target")"
+  say "Created  $target"
+
+  # The scout reads 'git diff' as its primary evidence, so a repo is not
+  # optional here - without one it has nothing authoritative to compare against.
+  command -v git >/dev/null 2>&1 || warn "git not found. The scout falls back to file listings, which is weaker evidence than a diff."
+
+  # The whole bus is ignored on purpose. These are coordination artifacts, not
+  # source - and keeping them untracked means the scout's 'git status --short'
+  # shows exactly what the executor changed in the codebase, which is the
+  # signal the relay exists to produce. The artifacts still live on disk.
+  cat > "$target/.gitignore" <<'EOF'
+# Relay coordination bus - artifacts stay on disk, out of version control
+.relay/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Common build & dependency output
+node_modules/
+dist/
+build/
+target/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs & local env
+*.log
+.env
+.env.local
+EOF
+
+  cat > "$target/README.md" <<EOF
+# $proj
+
+Worked on with the [Medina Agentic Relay](https://github.com/dmediontherise/medina-agentic-relay-setup).
+
+## Relay
+
+\`\`\`
+relay.sh status                 # session health and bus contents
+relay.sh capture -a executor    # is that pane working, or stuck on a prompt?
+relay.sh down                   # tear it down
+\`\`\`
+
+Task specs live in \`.relay/tasks/\`. Verdicts land in \`.relay/reports/\`.
+EOF
+
+  if command -v git >/dev/null 2>&1; then
+    ( cd "$target" && git init -q && git add -A ) || true
+    if ( cd "$target" && git commit -q -m "Initial commit" >/dev/null 2>&1 ); then
+      say "git init + initial commit"
+    else
+      # Almost always missing user.name/user.email. Say so, rather than
+      # leaving a repo with a silently empty history.
+      warn "git commit failed - repo initialized but nothing committed. Check: git config --global user.email"
+    fi
+  fi
+
+  mkdir -p "$target/.relay"/{tasks,results,evidence,reports,logs,launch}
+  cat > "$target/.relay/tasks/001-first-task.md" <<'EOF'
+# Task 001: <title>
+
+## Objective
+<What "done" means, in one or two sentences.>
+
+## Scope
+- In:  <files or areas the executor may touch>
+- Out: <explicitly off-limits>
+
+## Requirements
+<Numbered and individually verifiable. The validator grades against THIS
+file, so anything vague here produces a worthless verdict. Write them so
+someone who did not read this conversation could check them.>
+
+1.
+2.
+
+## Verification
+<Commands that must pass, with the expected outcome. The scout re-runs
+every one of these itself rather than trusting the executor.>
+
+- `<command>` -> <expected>
+
+## Artifacts
+- results:  `.relay/results/001-first-task.md`
+- evidence: `.relay/evidence/001-first-task.md`
+- report:   `.relay/reports/001-first-task.md`
+EOF
+  say "Seeded   .relay/tasks/001-first-task.md"
+
+  SCAFFOLDED=1
+  cmd_up -w "$target"
+  printf '\n  \033[1mNext:\033[0m\n'
+  printf '    1. Fill in .relay/tasks/001-first-task.md (requirements + verification)\n'
+  printf '    2. Run /relay-task in Claude Code from %s\n' "$target"
+  printf '       or dispatch by hand:  relay.sh dispatch -a executor -T .relay/tasks/001-first-task.md\n'
 }
 
 # =============================================================== UP ==========
@@ -358,6 +481,7 @@ cmd_attach() {
 need_tmux
 sub="${1:-status}"; shift || true
 case "$sub" in
+  new)      cmd_new      "$@" ;;
   up)       cmd_up       "$@" ;;
   down)     cmd_down     "$@" ;;
   status)   cmd_status   "$@" ;;

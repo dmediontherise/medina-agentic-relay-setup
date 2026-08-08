@@ -115,6 +115,31 @@ chmod +x ~/.claude/relay/relay.sh
 
 ## Use it
 
+### Starting a brand-new project
+
+One command scaffolds the project and brings the relay up on it:
+
+```powershell
+# Windows
+powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" new my-app
+```
+```bash
+# macOS / Linux
+~/.claude/relay/relay.sh new my-app
+```
+
+It creates the directory, runs `git init` with an initial commit, writes a `.gitignore`
+that excludes the `.relay/` bus, seeds `.relay/tasks/001-first-task.md` for you to fill
+in, and then starts the agents. It refuses to scaffold over a non-empty directory — run
+`up` on those instead.
+
+The bus is gitignored on purpose. These are coordination artifacts, not source, and
+keeping them untracked means the scout's `git status --short` shows exactly what the
+executor changed in your code — which is the signal the relay exists to produce. The
+artifacts still live on disk as a durable record.
+
+### Starting on an existing project
+
 From inside the project you want worked on:
 
 ```bash
@@ -143,6 +168,7 @@ $R wait     -f .relay/reports/001-slug.md  -a validator --timeout 1200
 
 | Command | Does |
 |---|---|
+| `new <name>` | Scaffold a project, then bring the relay up on it |
 | `up` / `down` | Build or tear down the session |
 | `status` | Session health, pane state, bus contents |
 | `dispatch -a <agent> -T <task>` | Hand a task file to an agent |
@@ -267,7 +293,8 @@ relay/
     ├── scout.md
     └── validator.md
 commands/                  Claude Code slash commands
-├── relay-up.md            bring the relay up
+├── relay-new.md           scaffold a project + bring the relay up
+├── relay-up.md            bring the relay up on an existing project
 ├── relay-task.md          run a full cycle
 ├── relay-status.md        health and bus contents
 └── relay-down.md          tear it down
