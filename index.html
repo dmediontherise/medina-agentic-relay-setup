@@ -699,7 +699,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Installation</div>
-      <a href="#install" class="nav-link"><span class="nav-icon">⊞</span>Windows &amp; Mac</a>
+      <a href="#install" class="nav-link"><span class="nav-icon">⊞</span>Win · Mac · Linux</a>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Reference</div>
@@ -733,8 +733,8 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <span class="hero-title-accent">Agentic Relay</span>
     </h1>
     <p class="hero-subtitle">
-      A skills-first framework pairing Claude Code and Gemini CLI.
-      Claude plans and verifies. Gemini builds. Together they ship.
+      A skills-first framework pairing Claude Code and Antigravity CLI in a closed loop.
+      Claude specs it. Gemini builds it. A scout gathers evidence, and Claude grades the result.
     </p>
     <div class="hero-ctas">
       <a href="#install" class="btn-primary">Get Started →</a>
@@ -766,8 +766,14 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   <h2>What is the <span class="gradient-text">Medina Relay</span>?</h2>
   <p>
     The Medina Agentic Relay assigns each phase of software development to the AI best suited for it.
-    Built on <strong style="color:var(--text)">obra/superpowers</strong> — a composable skills library —
-    and extended with <strong style="color:var(--text)">maestro-gemini</strong> for Gemini's build stage.
+    Built on <strong style="color:var(--text)">obra/superpowers</strong> — a composable skills library — and run as
+    four live agents in <span class="mono">tmux</span> / <span class="mono">psmux</span> panes that coordinate over a
+    file bus.
+  </p>
+  <p style="margin-top:12px;">
+    It is a <strong style="color:var(--text)">closed loop</strong>, not a handoff. The agent that writes the code does
+    not verify it, the agent that gathers the evidence does not grade it, and the agent that grades it never touches
+    the code. Every step lands a durable artifact on disk.
   </p>
 
   <!-- Interactive relay preview -->
@@ -808,16 +814,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
       <div class="glass-card relay-node rn-green" data-node="build" onclick="toggleNode(this)">
         <span class="rn-expand">+</span>
-        <div class="rn-model">Gemini CLI</div>
+        <div class="rn-model">Antigravity CLI (agy)</div>
         <div class="rn-stage">Build</div>
-        <div class="rn-desc">Execute plan, commit code to repo</div>
+        <div class="rn-desc">Execute the task file, report honestly</div>
         <div class="rn-tags">
-          <span class="rn-tag">executing-plans</span>
-          <span class="rn-tag">/maestro:orchestrate</span>
+          <span class="rn-tag">gemini-3.6-flash-high</span>
+          <span class="rn-tag">executor charter</span>
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            Gemini reads the self-contained plan and executes it. For complex parallel builds, maestro-gemini routes work to 22 specialist subagents. Simple sequential tasks use executing-plans.
+            The executor reads the self-contained task file from <span class="mono">.relay/tasks/</span> and implements it, then writes a completion report to <span class="mono">.relay/results/</span>. Its charter requires it to report failures as failures — a green report over red tests poisons every downstream decision in the relay. It never grades its own work.
           </div>
         </div>
       </div>
@@ -839,17 +845,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
       <div class="glass-card relay-node rn-blue" data-node="verify" onclick="toggleNode(this)">
         <span class="rn-expand">+</span>
-        <div class="rn-model">Claude Code</div>
-        <div class="rn-stage">Test &amp; Verify</div>
-        <div class="rn-desc">Review, debug, confirm quality</div>
+        <div class="rn-model">Sonnet scout → Opus validator</div>
+        <div class="rn-stage">Evidence &amp; Verdict</div>
+        <div class="rn-desc">Observe first, judge second — two agents, never one</div>
         <div class="rn-tags">
-          <span class="rn-tag">verification</span>
-          <span class="rn-tag">debugging</span>
-          <span class="rn-tag">code-review</span>
+          <span class="rn-tag">scout: evidence only</span>
+          <span class="rn-tag">validator: verdict</span>
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            Claude reads Gemini's commits, runs verification-before-completion, dispatches systematic-debugging if tests fail, and completes a code review before allowing a merge.
+            The <strong style="color:var(--text)">scout</strong> re-runs every verification command itself and records exit codes, real output and the actual diff to <span class="mono">.relay/evidence/</span> — observations only, never a pass or fail. The <strong style="color:var(--text)">validator</strong> then grades the task file requirement by requirement, weighing claim against evidence. Where the two disagree, the evidence wins. Splitting these roles is the point: the validator grades facts it did not gather, about code it did not write.
           </div>
         </div>
       </div>
@@ -927,8 +932,15 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <div class="glass-card prereq-item">
       <div class="prereq-item-icon" style="background:rgba(191,90,242,.12);">✨</div>
       <div>
-        <strong>Gemini CLI v0.35+</strong>
-        <span>Install: <code>npm install -g @google/gemini-cli</code></span>
+        <strong>Antigravity CLI (<code>agy</code>)</strong>
+        <span>The executor. Install: <code>irm https://antigravity.google/cli/install.ps1 | iex</code> (Win) or <code>curl -fsSL https://antigravity.google/cli/install.sh | sh</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(94,92,230,.12);">🖥️</div>
+      <div>
+        <strong>tmux / psmux</strong>
+        <span>Runs the agent panes. <code>brew install tmux</code>, <code>apt install tmux</code>, or <code>winget install marlocarlo.psmux</code></span>
       </div>
     </div>
     <div class="glass-card prereq-item">
@@ -941,8 +953,8 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <div class="glass-card prereq-item">
       <div class="prereq-item-icon" style="background:rgba(90,200,250,.12);">🔑</div>
       <div>
-        <strong>Google / Gemini Access</strong>
-        <span>AI Studio or AI Ultra. Then <code>gemini auth login</code></span>
+        <strong>Google Account</strong>
+        <span>Run <code>agy</code> once and sign in through the browser. No API key needed — and <strong>not</strong> <code>gemini auth login</code>, which Google retired on 2026-06-18</span>
       </div>
     </div>
   </div>
@@ -952,7 +964,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 <section id="install" class="reveal">
   <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Installation</div>
   <h2>Setup Guide</h2>
-  <p>Complete setup in 8 steps. Choose your platform below.</p>
+  <p>Choose your platform below. The last step installs the relay itself — that is the one that turns the handoff into a loop.</p>
 
   <div class="os-toggle" id="osToggle">
     <div class="os-toggle-pill" id="osPill"></div>
@@ -961,6 +973,9 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </div>
     <div class="os-tab" data-tab="mac" onclick="switchOS(this)">
       <span class="os-tab-icon">🍎</span> macOS
+    </div>
+    <div class="os-tab" data-tab="linux" onclick="switchOS(this)">
+      <span class="os-tab-icon">🐧</span> Linux
     </div>
   </div>
 
@@ -991,7 +1006,15 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <li class="step-item">
         <div class="step-num">2</div>
         <div class="step-body">
-          <h4>Install Claude Code and Gemini CLI</h4>
+          <h4>Install Claude Code and Antigravity CLI</h4>
+          <div class="info-box warn-box" style="margin:0 0 12px;">
+            <span class="info-box-icon">⚠️</span>
+            <div><strong style="color:var(--text)">Not Gemini CLI.</strong> Google retired “Sign in with Google” for Gemini CLI on
+            <strong>2026-06-18</strong> for Code Assist for individuals, AI Pro and AI Ultra. It fails with
+            <span class="mono">“This client is no longer supported for Gemini Code Assist for individuals.”</span>
+            Updating does not help — the auth path is gone, not broken. <strong>Antigravity CLI (<span class="mono">agy</span>)</strong>
+            is the successor and needs no API key.</div>
+          </div>
           <div class="term-block">
             <div class="tb-bar">
               <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
@@ -1000,9 +1023,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
             </div>
             <div class="tb-body">
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">npm install -g @anthropic-ai/claude-code</span></span>
-              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">npm install -g @google/gemini-cli</span></span>
-              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">claude auth login</span></span>
-              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini auth login</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">irm https://antigravity.google/cli/install.ps1 | iex</span></span>
+              <span class="tbb-div"><span class="c-comment"># Sign in to both now — a pane stuck on an auth screen looks identical to a busy one</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">claude</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">agy</span></span>
+              <span class="tbb-div"><span class="c-out">✓ agy authenticated via Google browser sign-in</span></span>
             </div>
           </div>
         </div>
@@ -1048,7 +1073,14 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <li class="step-item">
         <div class="step-num">5</div>
         <div class="step-body">
-          <h4>Install maestro-gemini extension</h4>
+          <h4>Install maestro-gemini extension <span style="font-size:11px;font-weight:500;color:var(--orange);border:1px solid rgba(255,159,10,.3);border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:middle;">LEGACY · OPTIONAL</span></h4>
+          <div class="info-box warn-box" style="margin:0 0 12px;">
+            <span class="info-box-icon">🕗</span>
+            <div>This step and the next belong to the original one-way handoff and drive <strong style="color:var(--text)">Gemini CLI</strong>,
+            which individual accounts can no longer authenticate (see step 2). The relay's executor is <span class="mono">agy</span>,
+            which does not use these. Skip both unless you hold a Code Assist <strong style="color:var(--text)">Standard/Enterprise</strong>
+            licence and still want the maestro subagent roster.</div>
+          </div>
           <div class="term-block">
             <div class="tb-bar">
               <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
@@ -1128,6 +1160,38 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
           </div>
         </div>
       </li>
+      <li class="step-item">
+        <div class="step-num">9</div>
+        <div class="step-body">
+          <h4>Install psmux and the relay control plane</h4>
+          <p style="font-size:13px;margin-bottom:8px;">
+            <span class="mono">psmux</span> is the Windows tmux port the relay drives. This step is what turns the
+            one-way handoff into a closed loop.
+          </p>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">PowerShell</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">winget install marlocarlo.psmux</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\charters "$env:USERPROFILE\.claude\relay\" -Recurse -Force</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\commands\*.md "$env:USERPROFILE\.claude\commands\" -Force</span></span>
+              <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Workspace .</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+              <span class="tbb-div"><span class="c-comment"># Confirm each agent actually loaded its charter before trusting it</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" capture -Agent executor</span></span>
+              <span class="tbb-div"><span class="c-out">READY</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
     </ol>
   </div>
 
@@ -1172,7 +1236,14 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <li class="step-item">
         <div class="step-num">3</div>
         <div class="step-body">
-          <h4>Install Claude Code and Gemini CLI</h4>
+          <h4>Install Claude Code and Antigravity CLI</h4>
+          <div class="info-box warn-box" style="margin:0 0 12px;">
+            <span class="info-box-icon">⚠️</span>
+            <div><strong style="color:var(--text)">Not Gemini CLI.</strong> Google retired “Sign in with Google” for Gemini CLI on
+            <strong>2026-06-18</strong> for Code Assist for individuals, AI Pro and AI Ultra. Updating does not help —
+            the auth path is gone, not broken. <strong>Antigravity CLI (<span class="mono">agy</span>)</strong> is the
+            successor and needs no API key.</div>
+          </div>
           <div class="term-block">
             <div class="tb-bar">
               <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
@@ -1181,9 +1252,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
             </div>
             <div class="tb-body">
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">npm install -g @anthropic-ai/claude-code</span></span>
-              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">npm install -g @google/gemini-cli</span></span>
-              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">claude auth login</span></span>
-              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">gemini auth login</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">curl -fsSL https://antigravity.google/cli/install.sh | sh</span></span>
+              <span class="tbb-div"><span class="c-comment"># Sign in to both now — a pane stuck on an auth screen looks identical to a busy one</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">claude</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">agy</span></span>
+              <span class="tbb-div"><span class="c-out">✓ agy authenticated via Google browser sign-in</span></span>
             </div>
           </div>
         </div>
@@ -1228,7 +1301,13 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <li class="step-item">
         <div class="step-num">6</div>
         <div class="step-body">
-          <h4>Install maestro-gemini and enable agents</h4>
+          <h4>Install maestro-gemini and enable agents <span style="font-size:11px;font-weight:500;color:var(--orange);border:1px solid rgba(255,159,10,.3);border-radius:6px;padding:2px 7px;margin-left:6px;vertical-align:middle;">LEGACY · OPTIONAL</span></h4>
+          <div class="info-box warn-box" style="margin:0 0 12px;">
+            <span class="info-box-icon">🕗</span>
+            <div>Belongs to the original one-way handoff and drives <strong style="color:var(--text)">Gemini CLI</strong>, which
+            individual accounts can no longer authenticate. The relay's executor is <span class="mono">agy</span> and does not
+            use this. Skip unless you hold a Code Assist <strong style="color:var(--text)">Standard/Enterprise</strong> licence.</div>
+          </div>
           <div class="term-block">
             <div class="tb-bar">
               <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
@@ -1285,6 +1364,188 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-ok">✓ maestro (1.4.0)</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">ls ~/.claude/hookify.long-run-drift.local.md &amp;&amp; echo "✓ hook"</span></span>
               <span class="tbb-div"><span class="c-ok">✓ hook</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">9</div>
+        <div class="step-body">
+          <h4>Install tmux and the relay control plane</h4>
+          <p style="font-size:13px;margin-bottom:8px;">This is what turns the one-way handoff into a closed loop.</p>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">Terminal — macOS</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">brew install tmux</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/relay.sh ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/commands/*.md ~/.claude/commands/</span></span>
+              <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">~/.claude/relay/relay.sh up -w .</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+    </ol>
+  </div>
+
+  <!-- LINUX -->
+  <div class="os-pane" id="pane-linux">
+    <div class="info-box" style="margin-top:0;">
+      <span class="info-box-icon">🐧</span>
+      <div>Linux is identical to macOS apart from the package manager. Commands below use
+      <span class="mono">apt</span>; for Fedora/RHEL swap in <span class="mono">dnf</span>, for Arch
+      <span class="mono">pacman -S</span>.</div>
+    </div>
+    <ol class="step-list">
+      <li class="step-item">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h4>Install Node.js, Git and tmux</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash — Debian / Ubuntu</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">sudo apt update &amp;&amp; sudo apt install -y git tmux curl</span></span>
+              <span class="tbb-div"><span class="c-comment"># Node LTS via nodesource — distro node is usually too old</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">sudo apt install -y nodejs</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">node --version &amp;&amp; git --version &amp;&amp; tmux -V</span></span>
+              <span class="tbb-div"><span class="c-out">v24.x.x   git version 2.x.x   tmux 3.3a</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h4>Install Claude Code and Antigravity CLI</h4>
+          <div class="info-box warn-box" style="margin:0 0 12px;">
+            <span class="info-box-icon">⚠️</span>
+            <div><strong style="color:var(--text)">Not Gemini CLI.</strong> Google retired “Sign in with Google” for
+            Gemini CLI on <strong>2026-06-18</strong> for Code Assist for individuals, AI Pro and AI Ultra. Updating
+            does not help — the auth path is gone, not broken. <strong>Antigravity CLI (<span class="mono">agy</span>)</strong>
+            is the successor and needs no API key.</div>
+          </div>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">sudo npm install -g @anthropic-ai/claude-code</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">curl -fsSL https://antigravity.google/cli/install.sh | sh</span></span>
+              <span class="tbb-div"><span class="c-comment"># agy signs in through a browser — on a headless box, forward the port or use SSH -L</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">claude</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">agy</span></span>
+              <span class="tbb-div"><span class="c-out">✓ agy authenticated via Google browser sign-in</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h4>Install superpowers and the reference library</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">git clone https://github.com/anthropics/anthropic-cookbook.git ~/.claude/anthropic-cookbook</span></span>
+              <span class="tbb-div"><span class="c-comment"># Then inside a Claude Code conversation:</span></span>
+              <span class="tbb-div"><span class="c-prompt">›</span> <span class="c-cmd">/plugin install superpowers@claude-plugins-official</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ superpowers installed successfully</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h4>Install the relay control plane</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/relay.sh ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/commands/*.md ~/.claude/commands/</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h4>Bring the relay up and verify the panes</h4>
+          <p style="font-size:13px;margin-bottom:8px;">
+            Run from inside the project you want worked on. Always <span class="mono">capture</span> before assuming an
+            agent is busy — a pane on a trust or auth prompt looks identical to one that is thinking.
+          </p>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cd ~/projects/my-app</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/.claude/relay/relay.sh up -w .</span></span>
+              <span class="tbb-div"><span class="c-out">[relay] executor bin : /home/you/.local/bin/agy</span></span>
+              <span class="tbb-div"><span class="c-out">[relay] Waiting for agents to boot and clearing startup prompts...</span></span>
+              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+              <span class="tbb-div"><span class="c-comment"># Confirm each agent actually loaded its charter</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/.claude/relay/relay.sh capture -a executor -n 12</span></span>
+              <span class="tbb-div"><span class="c-out">READY</span></span>
+              <span class="tbb-div"><span class="c-comment"># Watch it live in another terminal</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">tmux attach -t relay</span></span>
+            </div>
+          </div>
+        </div>
+      </li>
+      <li class="step-item">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <h4>Run a full cycle</h4>
+          <div class="term-block">
+            <div class="tb-bar">
+              <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+              <span class="tb-label">bash — or just use /relay-task in Claude Code</span>
+              <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+            </div>
+            <div class="tb-body">
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">R=~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-comment"># 1. executor implements</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a executor -T .relay/tasks/001-slug.md</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/results/001-slug.md -a executor --timeout 1200</span></span>
+              <span class="tbb-div"><span class="c-comment"># 2. scout re-runs verification independently — observations only</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a scout -T .relay/tasks/001-slug.md</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/evidence/001-slug.md -a scout --timeout 900</span></span>
+              <span class="tbb-div"><span class="c-comment"># 3. validator grades spec vs evidence</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a validator -T .relay/tasks/001-slug.md</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/reports/001-slug.md -a validator --timeout 1200</span></span>
+              <span class="tbb-div"><span class="c-ok">VALIDATOR PASS-WITH-CONCERNS .relay/reports/001-slug.md</span></span>
             </div>
           </div>
         </div>
@@ -1484,8 +1745,69 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   <h2>Relay <span class="gradient-text">Architecture</span></h2>
   <p>
     The spec and implementation plan are the <strong style="color:var(--text)">API between models</strong>.
-    Claude writes them with enough precision that Gemini can execute without any context from the planning conversation.
+    Claude writes them with enough precision that the executor can work without any context from the planning conversation.
   </p>
+  <p style="margin-top:12px;">
+    The original design was a <strong style="color:var(--text)">one-way handoff</strong> — Claude planned, fired a
+    detached window, and never heard back. You found out whether it worked by reading the diff. It is now a
+    <strong style="color:var(--text)">closed loop</strong>: four roles in live <span class="mono">tmux</span> /
+    <span class="mono">psmux</span> panes, coordinating over a file bus at <span class="mono">.relay/</span>.
+  </p>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The four roles</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Role</th><th>Model</th><th>Job</th></tr></thead>
+      <tbody>
+        <tr><td><strong style="color:var(--text)">Orchestrator</strong></td><td class="mono">Claude Opus</td><td>Writes the task spec, dispatches, decides. Your interactive session.</td></tr>
+        <tr><td><strong style="color:var(--text)">Executor</strong></td><td class="mono">agy · gemini-3.6-flash-high</td><td>Implements the task. Never grades its own work.</td></tr>
+        <tr><td><strong style="color:var(--text)">Scout</strong></td><td class="mono">Claude Sonnet</td><td>Re-runs verification and records <strong style="color:var(--text)">observations only</strong> — never a verdict.</td></tr>
+        <tr><td><strong style="color:var(--text)">Validator</strong></td><td class="mono">Claude Opus</td><td>Grades spec vs. evidence. Does not fix the code it judges.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🔑</span>
+    <div>
+      <strong style="color:var(--text)">Why the scout exists.</strong> Validation splits into mechanical evidence
+      gathering and actual judgment. The scout does the former cheaply so the validator spends its tokens on the
+      latter — and the payoff is structural: the validator grades <em>facts it did not gather</em>, about code
+      <em>written by a third agent</em>. Neither the claim nor the observation comes from the party being judged.
+      Do not collapse the two roles back into one; an agent that gathers its own evidence just grades its own
+      summary of it.
+    </div>
+  </div>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The file bus</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Path</th><th>Written by</th><th>Is</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">.relay/tasks/NNN-slug.md</td><td>Orchestrator</td><td>the contract</td></tr>
+        <tr><td class="mono">.relay/results/NNN-slug.md</td><td>Executor</td><td>the claim</td></tr>
+        <tr><td class="mono">.relay/evidence/NNN-slug.md</td><td>Scout</td><td>the observation</td></tr>
+        <tr><td class="mono">.relay/reports/NNN-slug.md</td><td>Validator</td><td>the verdict</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--text2);margin-top:14px;">
+      Each agent owns exactly one channel and is forbidden by its charter from writing to the others. Where the
+      result and the evidence disagree, <strong style="color:var(--text)">the evidence wins</strong>.
+    </p>
+  </div>
+
+  <div class="info-box warn-box">
+    <span class="info-box-icon">⚠️</span>
+    <div>
+      <strong style="color:var(--text)">The most common failure is a stuck pane, not a slow model.</strong>
+      A pane sitting on a folder-trust gate, an auth screen, or an approval dialog looks exactly like one that is
+      thinking. Always run <span class="mono">capture -a &lt;agent&gt;</span> before concluding an agent is working.
+      Reviewers run with permissions bypassed for exactly this reason — <span class="mono">acceptEdits</span> gates
+      every new command shape behind a prompt, which turns an unattended verification agent into a permanent hang.
+      What keeps the scout and validator from editing the code they judge is their <strong style="color:var(--text)">charters,
+      not a sandbox</strong>. Pass <span class="mono">--safe</span> to put a human back in the loop.
+    </div>
+  </div>
 
   <div class="glass-card" style="padding:24px;margin:24px 0;">
     <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Handoff Rules</h3>
@@ -1508,6 +1830,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   <p>Everything that powers this setup.</p>
 
   <div class="resource-grid">
+    <a class="glass-card resource-card" href="https://github.com/dmediontherise/medina-agentic-relay-setup" target="_blank">
+      <h4>The relay control plane</h4>
+      <p>This repo. <span class="mono">relay.ps1</span> (Windows/psmux) and <span class="mono">relay.sh</span> (macOS·Linux/tmux), the three agent charters, and the Claude Code slash commands.</p>
+      <div class="resource-repo">github.com/dmediontherise/medina-agentic-relay-setup</div>
+    </a>
+    <a class="glass-card resource-card" href="https://antigravity.google" target="_blank">
+      <h4>Antigravity CLI (agy)</h4>
+      <p>The executor. Google's successor to Gemini CLI for individual accounts — browser sign-in, no API key.</p>
+      <div class="resource-repo">antigravity.google</div>
+    </a>
     <a class="glass-card resource-card" href="https://github.com/obra/superpowers" target="_blank">
       <h4>obra/superpowers</h4>
       <p>Core skills framework. Full development cycle: brainstorm → plan → TDD → subagent-dev → review → ship.</p>
@@ -1566,10 +1898,10 @@ function switchOS(tab){
   panes.forEach(p=>p.classList.remove('active'));
   tab.classList.add('active');
   document.getElementById('pane-'+tab.dataset.tab).classList.add('active');
-  const idx = Array.from(tabs).indexOf(tab);
-  const tw = tab.offsetWidth;
-  pill.style.width = tw+'px';
-  pill.style.transform = 'translateX('+(idx*(tw))+'px)';
+  // Measure from real layout rather than index*width — the tabs are not equal
+  // widths (Windows / macOS / Linux), so the pill would drift with an assumed grid.
+  pill.style.width = tab.offsetWidth+'px';
+  pill.style.transform = 'translateX('+(tab.offsetLeft - tabs[0].offsetLeft)+'px)';
 }
 window.addEventListener('DOMContentLoaded',()=>{
   const activeTab = document.querySelector('.os-tab.active');
@@ -1636,7 +1968,10 @@ const revealObs = new IntersectionObserver(entries=>{
   entries.forEach(e=>{
     if(e.isIntersecting) e.target.classList.add('visible');
   });
-},{threshold:.08,rootMargin:'0px 0px -60px 0px'});
+// threshold 0, not a ratio: a section taller than ~12 viewports can never expose
+// 8% of itself at once, so a ratio threshold leaves long sections (and any deep
+// link into one) stuck invisible. Any intersection at all is enough to reveal.
+},{threshold:0,rootMargin:'0px 0px -60px 0px'});
 document.querySelectorAll('.reveal').forEach(el=>revealObs.observe(el));
 
 /* ── SIDEBAR ACTIVE STATE ──────────────────────────── */

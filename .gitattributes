@@ -1,0 +1,10 @@
+# Shell scripts must keep LF endings regardless of the contributor's platform.
+# A relay.sh checked out with CRLF dies on Linux/macOS with:
+#   bad interpreter: /usr/bin/env bash^M
+*.sh text eol=lf
+
+# PowerShell is happy either way, but keep it stable across checkouts.
+*.ps1 text eol=crlf
+
+*.md   text
+*.html text
