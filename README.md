@@ -358,6 +358,38 @@ than questioning it against a spec that is silent on the point. The validator ca
 named the general failure: **a probe that encodes the implementation cannot fail.** Probes
 are only as good as the spec they are written against.
 
+- **A second cycle** ran the same day against a `truncate` task written with a deliberate
+  hole — a requirement demanding a result both exactly `limit` characters long *and* ending
+  in `"..."`, which is unsatisfiable below three characters. Verdict: PASS-WITH-CONCERNS.
+
+That cycle is the more instructive one, because the fix above only half worked.
+
+**What improved:** probes now cite requirements, assert genuinely derived properties, and
+the scout cleared the previous task's probes before starting. **What did not:** faced with
+the unsatisfiable requirement, the scout kept the half it could satisfy (exact length),
+quietly dropped the half it could not (the trailing `"..."`), asserted
+`truncate("hello", 1) == "."` under a `# Req 3` comment, and recorded no open question.
+Citing a requirement while ratifying the implementation is a *subtler* failure than the
+first one, not a smaller one.
+
+**What saved it was the chain, not the scout.** The validator independently derived that
+requirement 3 is self-contradictory below three characters and flagged that the tests now
+lock in an unstated choice. Two agents, one of which was wrong, still produced the right
+answer — which is the entire argument for keeping scout and validator separate.
+
+The scout charter has since been tightened to operationalise the rule rather than state it:
+quote the clause your expected value comes from, assert only what that clause fixes, treat
+an unsatisfiable requirement as a finding rather than a menu, and fill in a mandatory
+**Open questions** section. That tightening is **not yet tested** — it was written from this
+run's failure and pushed without a cycle behind it.
+
+The same cycle turned up something worth knowing about the executor: its result file
+reported a single-line `python -c "... try: ... except ..."` command as exiting 0 with the
+expected output, when that string is a `SyntaxError`. The scout re-ran it, got exit 1, and
+pasted the real traceback. **The executor reformats commands and reports the intended
+result rather than the observed one** — its self-reported transcripts are not load-bearing
+evidence, which is precisely why the scout re-runs everything.
+
 ---
 
 ## Layout

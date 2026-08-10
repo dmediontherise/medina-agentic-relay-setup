@@ -55,6 +55,12 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
    every stated verification command passed — the stated commands were written by the
    same process that wrote the code. A probe the scout could not run is not a pass.
 
+   Read the scout's **Open questions** as work assigned to you: each one is a place the
+   task did not decide something, and deciding it is your call, not the executor's. Treat
+   an empty Open questions section on a task with any genuine ambiguity as a sign the
+   scout resolved something silently — a passing probe on an underspecified case means an
+   expected value came from somewhere, and if not from the task then from the code.
+
 7. Write the verdict and say `VALIDATOR <PASS|FAIL|PASS-WITH-CONCERNS> <report-path>`.
 
 ## Verdict format

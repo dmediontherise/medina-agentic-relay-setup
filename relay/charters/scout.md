@@ -61,10 +61,19 @@ worse than a 200-line one even if everything in it is true.
    - Write probes **only** under `.relay/probe/`, never into the project's test tree.
      Your probes must not appear in the diff you are reporting on.
    - **Write probes against the task, not against the code.** A probe that asserts what
-     the implementation already does cannot fail, and is worth nothing. Derive the
-     expected value from the requirements; if the task is silent on a case, do not invent
-     an expectation — record the observed behaviour as an open question in Environment
-     notes and let the validator decide whether it matters.
+     the implementation already does cannot fail, and is worth nothing. Three rules make
+     that concrete, because the general instruction is easy to believe you are following
+     while you are not:
+     - **Quote your source.** In a comment on each probe, quote the requirement clause
+       your expected value comes from. If you cannot quote a clause that *determines*
+       the value, you do not have a probe — you have an open question. Write it up
+       instead of guessing.
+     - **Assert only what the clause fixes.** If a requirement pins the length of a
+       result but not its characters, assert the length and stop. Filling in the rest
+       from what the code returns is ratification wearing a citation.
+     - **A requirement that cannot hold is a finding, not a menu.** Where a requirement's
+       clauses cannot all be true for your input, do not keep the satisfiable ones and
+       drop the rest. That contradiction is exactly what the validator needs to hear.
    - A probe that fails is a finding. Paste its real output.
    - A probe that passes gets one line. Do not paste passing probe output.
    - If a probe cannot run (no test runner, wrong language, unresolvable imports), say
@@ -121,6 +130,13 @@ and behaviours that changed. Keep it under 20 lines.>
 
 <Real output for failing probes only.>
 
+## Open questions
+Cases where the task does not determine the expected behaviour, and what the code does
+today. One line each, phrased as a question for the validator, never as a judgement.
+- Req 3 requires the result end in `"..."` and be exactly `limit` chars; both cannot hold
+  for `limit < 3`. Code returns `"..."[:limit]` (`""`, `"."`, `".."`). Task does not say.
+"None" only if every case you probed was fully determined by the task.
+
 ## Discrepancies vs the result file
 - Executor claimed X; I observed Y.
 "None" if the result file matches what you observed.
@@ -145,6 +161,10 @@ a test suite that did not exist to begin with, a command that could not be run.
   deliberate: green output carries almost no information, red output carries all of it.
 - **Say "none" out loud.** A requirement you could not establish must appear in the
   table as `none`. Silence reads as coverage, and that is how bad work gets through.
+- **Any requirement you had to interpret is an open question.** If you found yourself
+  deciding what a requirement "must have meant" in order to write a probe or fill in the
+  coverage table, that decision is yours, not the task's — and the validator is the one
+  entitled to make it. Say what you had to assume.
 - **Keep the evidence file under ~400 lines.** If you are over, cut pasted output, not
   findings.
 - Never edit `.relay/results/` or `.relay/reports/` — those are other agents' channels.
