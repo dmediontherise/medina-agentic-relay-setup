@@ -355,8 +355,19 @@ if ($Command -eq 'up') {
     $agyModel = 'gemini-3.6-flash-high'
     $agyFlags = '--dangerously-skip-permissions'
     if ($Safe) { $agyFlags = '--mode accept-edits' }
+
+    # agy does NOT root itself in the process working directory. Proven 2026-08-09: a
+    # pane whose cwd is the workspace still runs its tools in C:\Users\<u>\.gemini\
+    # antigravity-cli, so a relative path like '.relay/executor.md' resolves there,
+    # misses, and the agent starts hunting the filesystem for something matching. In
+    # testing both agy panes found and loaded a charter belonging to an entirely
+    # different project, then reported READY on it.
+    #
+    # --add-dir pins the workspace explicitly and makes the tools run there. psmux's
+    # -c is not sufficient - it sets the pane's cwd correctly, and agy ignores it.
+    $agyRoot = "--add-dir `"$Workspace`""
     $agyBoot = "Read .relay/executor.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for task files."
-    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" --model $agyModel $agyFlags -i `"$agyBoot`"`r`n"
+    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$agyBoot`"`r`n"
 
     # acceptEdits permits file edits but still gates every new Bash command shape behind
     # an approval prompt - which strands a review pane, whose entire job is running
@@ -389,7 +400,7 @@ if ($Command -eq 'up') {
     # already ran under, carried over unchanged via $agyFlags. Its charter keeps it out of
     # the source tree, and .relay/probe/ gives it a sanctioned place to write instead.
     $scoutBoot = "Read .relay/scout.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
-    $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" --model $agyModel $agyFlags -i `"$scoutBoot`"`r`n"
+    $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$scoutBoot`"`r`n"
 
     # Bus pane: live view of artifacts landing on the file bus.
     $watchBody = @(

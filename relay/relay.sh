@@ -266,6 +266,13 @@ cmd_up() {
   local agy_model="gemini-3.6-flash-high"
   local exec_flags="--dangerously-skip-permissions"
   local claude_mode="bypassPermissions"
+
+  # agy does NOT root itself in the process working directory. Proven on Windows
+  # 2026-08-09: a pane whose cwd is the workspace still runs its tools in agy's own
+  # config dir, so a relative path like '.relay/executor.md' resolves there, misses,
+  # and the agent starts hunting the filesystem - in testing both agy panes loaded a
+  # charter belonging to a completely different project and reported READY on it.
+  # --add-dir pins the workspace explicitly. The launcher's `cd` is not sufficient.
   if [ "$safe" -eq 1 ]; then
     exec_flags="--mode accept-edits"
     claude_mode="acceptEdits"
@@ -297,9 +304,9 @@ cmd_up() {
   # affordable in the one seat that is pure judgment. If rate limits ever bite, drop the
   # validator to sonnet before changing anything else; the relay still works.
   local l_exec l_val l_scout l_bus
-  l_exec="$(write_launcher executor "$(printf 'exec %q --model %s %s -i %q' "$agy_exe" "$agy_model" "$exec_flags" "$exec_boot")")"
+  l_exec="$(write_launcher executor "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$exec_boot")")"
   l_val="$(write_launcher validator "$(printf 'exec %q --model opus --permission-mode %s %q' "$claude_exe" "$claude_mode" "$val_boot")")"
-  l_scout="$(write_launcher scout "$(printf 'exec %q --model %s %s -i %q' "$agy_exe" "$agy_model" "$exec_flags" "$scout_boot")")"
+  l_scout="$(write_launcher scout "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$scout_boot")")"
   l_bus="$(write_launcher buswatch 'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
 
   say "Building session '$SESSION' in $workspace"

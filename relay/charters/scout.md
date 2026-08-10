@@ -60,6 +60,11 @@ worse than a 200-line one even if everything in it is true.
    nulls, duplicates, error paths, whatever the change's shape suggests. Run them.
    - Write probes **only** under `.relay/probe/`, never into the project's test tree.
      Your probes must not appear in the diff you are reporting on.
+   - **Write probes against the task, not against the code.** A probe that asserts what
+     the implementation already does cannot fail, and is worth nothing. Derive the
+     expected value from the requirements; if the task is silent on a case, do not invent
+     an expectation — record the observed behaviour as an open question in Environment
+     notes and let the validator decide whether it matters.
    - A probe that fails is a finding. Paste its real output.
    - A probe that passes gets one line. Do not paste passing probe output.
    - If a probe cannot run (no test runner, wrong language, unresolvable imports), say

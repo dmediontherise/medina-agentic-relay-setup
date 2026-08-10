@@ -289,6 +289,19 @@ agent, and have the multiplexer exec it directly. No quoting, no inherited envir
 **Executor pane dies instantly.** `agy` is not installed or not signed in. Panes are created
 with `-NoExit` (Windows) so the error stays readable — run `capture -a executor`.
 
+**An `agy` agent reads the wrong project's files.** `agy` does **not** root itself in its
+process working directory — it runs its tools in its own config directory (`~/.gemini/
+antigravity-cli`). So a pane whose cwd is correct still resolves `.relay/executor.md`
+somewhere else entirely, misses, and the agent starts searching the filesystem for
+something that matches. Observed on 2026-08-09: both `agy` panes found a `.relay/` from an
+unrelated project, loaded *its* charter, and reported `READY` — indistinguishable from a
+correct boot unless you read the pane's file paths.
+
+Both control planes now pass `--add-dir <workspace>` to pin it. The multiplexer's `-c` flag
+is not sufficient: it sets the pane cwd correctly and `agy` ignores it. If you launch `agy`
+yourself, pass `--add-dir` — and when checking a pane reached `READY`, check *which file it
+read*, not just that the word appeared.
+
 ---
 
 ## What has actually been verified
@@ -316,10 +329,34 @@ assertion-body review was the most valuable thing in the run, and it was happeni
 most expensive seat. It is now the scout's contractual duty, alongside edge-case probing —
 work that got cheap the moment the scout moved off Claude.
 
-**Not yet proven end to end:** the 2026-08-09 configuration — `agy` scout, the probe leg,
-the assertion audit, and the compacted evidence format — is syntax-checked and reviewed but
-has not been exercised on a real task. The 2026-08-08 run above was the Sonnet-scout build.
-Treat the new verification depth as designed-but-unproven until someone runs a cycle on it.
+- **The 2026-08-09 configuration** — `agy` scout, probe leg, assertion audit, compacted
+  evidence — proven end to end the same day, on a duration-parser task with a deliberately
+  rich edge-case surface. Executor implemented it and reported COMPLETE; scout re-ran all
+  five verification commands, audited the assertion bodies, and wrote eight probes;
+  validator returned PASS with four concerns. Unattended, no human in the loop.
+
+That run found a bug in the relay itself before it found anything in the code, which is
+worth repeating: **`agy` does not root itself in its process working directory** (see
+Troubleshooting). Both agy panes had loaded a charter belonging to a different project and
+reported `READY` on it. `--add-dir` is the fix; the first cycle was re-run after it landed.
+
+Three things about the new design held up under the run:
+
+- **Compaction worked.** The evidence file came in around 60 lines against a 400-line cap,
+  with five verification commands reduced to a five-row table and no green output pasted.
+- **The "suspiciously clean" rule earned its place.** The scout returned all-`direct`
+  confidence, no discrepancies, no audit findings and eight passing probes. The validator
+  treated that as a signal rather than a result, sampled the work itself, and confirmed it
+  was genuine — then went past it and ran 29 adversarial inputs of its own.
+- **It found something the scout missed.** `parse_duration("١h")` returns `3600`, because
+  `str.isdigit()` accepts Arabic-Indic digits. The task never restricted the digit set, so
+  the validator correctly filed it as a concern rather than a failed requirement.
+
+And one honest weakness in the new probe leg: the scout's unicode probe asserted
+`parse_duration("١h") == 3600` — encoding the implementation's behaviour as expected rather
+than questioning it against a spec that is silent on the point. The validator caught it and
+named the general failure: **a probe that encodes the implementation cannot fail.** Probes
+are only as good as the spec they are written against.
 
 ---
 
