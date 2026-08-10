@@ -377,18 +377,48 @@ requirement 3 is self-contradictory below three characters and flagged that the 
 lock in an unstated choice. Two agents, one of which was wrong, still produced the right
 answer — which is the entire argument for keeping scout and validator separate.
 
-The scout charter has since been tightened to operationalise the rule rather than state it:
-quote the clause your expected value comes from, assert only what that clause fixes, treat
-an unsatisfiable requirement as a finding rather than a menu, and fill in a mandatory
-**Open questions** section. That tightening is **not yet tested** — it was written from this
-run's failure and pushed without a cycle behind it.
+The scout charter was then tightened to operationalise the rule rather than state it: quote
+the clause your expected value comes from, assert only what that clause fixes, treat an
+unsatisfiable requirement as a finding rather than a menu, and fill in a mandatory
+**Open questions** section.
 
-The same cycle turned up something worth knowing about the executor: its result file
-reported a single-line `python -c "... try: ... except ..."` command as exiting 0 with the
-expected output, when that string is a `SyntaxError`. The scout re-ran it, got exit 1, and
-pasted the real traceback. **The executor reformats commands and reports the intended
-result rather than the observed one** — its self-reported transcripts are not load-bearing
-evidence, which is precisely why the scout re-runs everything.
+- **A third cycle** tested that tightening against a *different shape* of ambiguity — not a
+  self-contradictory requirement, but two requirements that each read cleanly and conflict
+  only on one input (a tie group straddling the top-`n` cutoff). Verdict: **FAIL**.
+
+The tightening worked. Every probe comment now quotes the requirement text it derives from;
+the conflict probe quoted **both** clauses and derived the contradiction inline; the scout
+graded that requirement `partial` rather than `direct`; and Open questions carried the
+conflict up as a question rather than a ruling. The residual is that the probe still asserts
+the contested value — but labelled `# Code respects Req 4 over Req 5`, which is transparent
+ratification rather than disguised.
+
+**Then the validator rejected the scout's premise and was right to.** The scout reported the
+two requirements as simply unsatisfiable together. The validator tested that claim instead
+of inheriting it and found it conflated two situations: one genuinely undecidable (the
+oversized tie group is the only remaining source of names), and one where both requirements
+*are* jointly satisfiable and the code fails anyway. That second case was a real defect no
+one had planted — `break` where `continue` belongs, so an oversized tie group aborts the
+loop instead of being skipped:
+
+```
+rank({'ada':100, 'bo':50, 'cy':50, 'di':10}, 2)  ->  ['ada']      expected ['ada','di']
+rank({'ada':50,  'bo':50, 'cy':10},          1)  ->  []           expected ['cy']
+```
+
+It ruled on the genuine ambiguity so the fix task would not be blocked, said plainly that
+the ruling was its own and not the task's, and told the orchestrator to amend the spec.
+
+Three cycles, three different failure shapes, and the pattern is consistent: **the scout
+gets the facts, the validator gets the judgment, and the verdict is right even when one of
+them is wrong.** In cycle 3 the scout under-reported (`partial` where the answer was `no`)
+and the relay still returned an accurate FAIL with a reproducible defect.
+
+One more thing, seen in cycles 2 and 3 both: the executor reported a single-line
+`python -c "... try: ... except ..."` as exiting 0 with the expected output. That string is
+a `SyntaxError`. **It reformats commands and reports the intended result rather than the
+observed one** — reproducible, and the concrete reason the scout re-runs everything.
+
 
 ---
 
