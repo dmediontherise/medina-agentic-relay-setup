@@ -2,10 +2,15 @@
 # ---------------------------------------------------------------------------
 # Medina Agentic Relay - tmux control plane (macOS / Linux).
 #
-# Opus (orchestrator) drives an executor and two Claude reviewers as live tmux
-# panes. Content moves over a file bus (.relay/) so results are clean and
-# lossless; tmux provides process persistence, liveness, and the ability to
-# send follow-up instructions into a running agent.
+# Opus (orchestrator) drives two Gemini panes - executor and scout - and an Opus
+# validator, as live tmux panes. Content moves over a file bus (.relay/) so
+# results are clean and lossless; tmux provides process persistence, liveness,
+# and the ability to send follow-up instructions into a running agent.
+#
+# The validator is the only Claude pane. Executor and scout run Antigravity CLI
+# and spend no Claude quota, so evidence gathering is free and deliberately deep
+# (re-run, probe, assertion audit); the scout compacts that depth into a capped
+# evidence file so the one paid pane reads findings, not raw log volume.
 #
 # This is the POSIX counterpart to relay.ps1. Same subcommands, same bus
 # layout, same charters - so a task file written on one platform runs on the
@@ -162,7 +167,9 @@ EOF
     fi
   fi
 
-  mkdir -p "$target/.relay"/{tasks,results,evidence,reports,logs,launch}
+  # 'probe' is the scout's sanctioned scratch area for throwaway edge-case tests, kept
+  # out of the project's own test tree so probing never pollutes the diff it reports on.
+  mkdir -p "$target/.relay"/{tasks,results,evidence,reports,logs,launch,probe}
   cat > "$target/.relay/tasks/001-first-task.md" <<'EOF'
 # Task 001: <title>
 
@@ -222,7 +229,7 @@ cmd_up() {
   fi
 
   mkdir -p "$RELAY_HOME"
-  mkdir -p "$workspace/.relay"/{tasks,results,evidence,reports,logs,launch}
+  mkdir -p "$workspace/.relay"/{tasks,results,evidence,reports,logs,launch,probe}
 
   # Charters describe each agent's contract with the bus.
   for c in executor validator scout; do
@@ -244,11 +251,11 @@ cmd_up() {
     agy_exe="agy"
   fi
   if [ -z "$claude_exe" ]; then
-    warn "'claude' not found - scout and validator will not start."
+    warn "'claude' not found - the validator will not start."
     claude_exe="claude"
   fi
-  say "executor bin : $agy_exe"
-  say "claude  bin  : $claude_exe"
+  say "agy    bin   : $agy_exe   (executor + scout)"
+  say "claude bin   : $claude_exe   (validator)"
 
   # --- launchers -----------------------------------------------------------
   # Each pane execs a generated script rather than having a command typed into
@@ -256,6 +263,7 @@ cmd_up() {
   # send-keys quoting rules, and the pane shell inherits its environment from
   # the tmux server, which may have been started by anything.
   local launch="$workspace/.relay/launch"
+  local agy_model="gemini-3.6-flash-high"
   local exec_flags="--dangerously-skip-permissions"
   local claude_mode="bypassPermissions"
   if [ "$safe" -eq 1 ]; then
@@ -280,10 +288,18 @@ cmd_up() {
   val_boot="Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
   scout_boot="Read .relay/scout.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
 
+  # Executor and scout both run Antigravity CLI on the same Gemini tier, so neither
+  # spends Claude quota. Independence between them comes from role separation - separate
+  # process, separate charter, and a scout that never sees the executor's reasoning -
+  # not from putting a different model in each seat.
+  #
+  # That leaves the validator as the only Claude pane, which is what makes Opus
+  # affordable in the one seat that is pure judgment. If rate limits ever bite, drop the
+  # validator to sonnet before changing anything else; the relay still works.
   local l_exec l_val l_scout l_bus
-  l_exec="$(write_launcher executor "$(printf 'exec %q --model gemini-3.6-flash-high %s -i %q' "$agy_exe" "$exec_flags" "$exec_boot")")"
+  l_exec="$(write_launcher executor "$(printf 'exec %q --model %s %s -i %q' "$agy_exe" "$agy_model" "$exec_flags" "$exec_boot")")"
   l_val="$(write_launcher validator "$(printf 'exec %q --model opus --permission-mode %s %q' "$claude_exe" "$claude_mode" "$val_boot")")"
-  l_scout="$(write_launcher scout "$(printf 'exec %q --model sonnet --permission-mode %s %q' "$claude_exe" "$claude_mode" "$scout_boot")")"
+  l_scout="$(write_launcher scout "$(printf 'exec %q --model %s %s -i %q' "$agy_exe" "$agy_model" "$exec_flags" "$scout_boot")")"
   l_bus="$(write_launcher buswatch 'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
 
   say "Building session '$SESSION' in $workspace"
@@ -338,9 +354,9 @@ EOF
   for p in $pending; do warn "pane $p never cleared its startup prompt - inspect with 'capture'."; done
 
   say "Relay up."
-  say "  executor  (agy / gemini-3.6-flash-high) -> $EXECUTOR_PANE"
-  say "  validator (claude opus)                 -> $VALIDATOR_PANE"
-  say "  scout     (claude sonnet)               -> $SCOUT_PANE"
+  say "  executor  (agy / $agy_model) -> $EXECUTOR_PANE"
+  say "  validator (claude opus)                  -> $VALIDATOR_PANE"
+  say "  scout     (agy / $agy_model) -> $SCOUT_PANE"
   say "  bus watch                               -> $BUS_PANE"
   say "Attach with: tmux attach -t $SESSION"
 }
@@ -407,7 +423,7 @@ cmd_dispatch() {
   rel="${abs#"$WORKSPACE"/}"
   case "$agent" in
     executor)  msg="New task on the bus: $rel . Read it, execute it per your contract in .relay/executor.md, and write your completion report to the results path named in the task." ;;
-    scout)     msg="Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification commands yourself, record what you observe, and write to the evidence path named in the task. Do not issue a verdict." ;;
+    scout)     msg="Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Observations only, no verdict." ;;
     validator) msg="Grade this task: $rel . Follow your contract in .relay/validator.md - read the task, the executor result, and the scout evidence, then write your verdict to the report path named in the task." ;;
     *) fail "Unknown agent '$agent'." ;;
   esac

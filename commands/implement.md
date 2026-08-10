@@ -1,26 +1,58 @@
 ---
-description: "Automatically hand off and trigger plan implementation via Gemini/Antigravity in another terminal"
+description: "Execute the latest implementation plan through the relay (agy executes, agy scouts, Opus validates)"
 ---
 
-Locate the latest implementation plan and activate the implementation in another terminal:
+Execute an existing implementation plan through the relay. This is a thin wrapper over
+`/relay-task` — it only locates the plan and feeds it in as the spec source. All execution,
+evidence gathering, and grading happen through the relay's normal cycle.
 
-1. Search for implementation plans in the workspace:
-   - Check `docs/superpowers/plans/` and `docs/maestro/plans/` for markdown files ending in `.md`.
-   - Identify the most recently modified implementation plan file.
+There is no second terminal window. Agents run as psmux panes in one detached session;
+watch them with `psmux attach -t relay` (Ctrl+B d detaches).
 
-2. If no plan file is found, inform the user that they must write a plan first (using `superpowers:writing-plans` skill).
+## 1. Locate the plan
 
-3. Once the latest plan file is found, print a confirmation message showing the plan path (e.g., `docs/superpowers/plans/YYYY-MM-DD-feature-name.md`).
+If `$ARGUMENTS` names a plan file, use it. Otherwise search `docs/superpowers/plans/` and
+`docs/maestro/plans/` for `.md` files and take the most recently modified one.
 
-4. Run this PowerShell command to:
-   - Open the current workspace in Antigravity IDE (minimized).
-   - Launch a new PowerShell terminal running the Gemini CLI initialized with the Maestro execution command for that plan.
+If no plan exists, stop and tell the user to write one first with the
+`superpowers:writing-plans` skill. Do not invent a plan to proceed.
 
-Run this command:
-```bash
-powershell.exe -NoProfile -Command "Start-Process antigravity-ide.cmd -ArgumentList '.' -WindowStyle Minimized; Start-Process powershell -ArgumentList '-NoExit', '-Command', 'gemini -i \"/maestro:execute <plan-path>\"'"
+Print the resolved plan path before continuing, so the user can catch a wrong pick.
+
+## 2. Make sure the relay is up
+
 ```
-*(Replace `<plan-path>` with the relative path of the plan file you found, e.g., `docs/superpowers/plans/2026-05-30-some-feature.md`)*
+powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" status
+```
 
-5. Confirm to the user:
-   "🚀 Activated Antigravity IDE and launched Gemini/Maestro executor in a new terminal window to execute the plan: <plan-filename>"
+If it is not running, bring it up on the current workspace:
+
+```
+powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Workspace "<current workspace path>"
+```
+
+Then confirm each pane reached `READY` with `capture` before dispatching anything. A pane
+on an auth screen, folder-trust prompt, or `/rate-limit-options` menu is indistinguishable
+from a busy one — that is this relay's most common failure.
+
+## 3. Run the relay cycle(s)
+
+Follow `/relay-task` from step 1 onward, with one difference: the task spec is *derived
+from the plan* rather than written from a free-form request.
+
+- If the plan is a single unit of work, write one `.relay/tasks/NNN-<slug>.md` from it.
+- If the plan has discrete phases, run **one full cycle per phase** — dispatch, scout,
+  validate, and check the verdict before starting the next. Do not batch several phases
+  into one task; the validator's grade becomes useless when it spans unrelated changes.
+
+Carry the plan's own requirements and verification commands into the spec verbatim where
+it states them. Where the plan is vague, tighten it into something checkable by someone
+who did not write it, and say in your summary what you tightened.
+
+## 4. Report
+
+Report each phase's verdict exactly as the validator returned it — PASS,
+PASS-WITH-CONCERNS (naming every concern), or FAIL with its evidence. Stop on a FAIL that
+survives three attempts and hand the user the specific blocker.
+
+You remain the orchestrator. You do not implement the plan yourself.

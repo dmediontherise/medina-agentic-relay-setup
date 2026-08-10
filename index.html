@@ -845,7 +845,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
       <div class="glass-card relay-node rn-blue" data-node="verify" onclick="toggleNode(this)">
         <span class="rn-expand">+</span>
-        <div class="rn-model">Sonnet scout → Opus validator</div>
+        <div class="rn-model">Gemini scout → Opus validator</div>
         <div class="rn-stage">Evidence &amp; Verdict</div>
         <div class="rn-desc">Observe first, judge second — two agents, never one</div>
         <div class="rn-tags">
@@ -854,7 +854,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            The <strong style="color:var(--text)">scout</strong> re-runs every verification command itself and records exit codes, real output and the actual diff to <span class="mono">.relay/evidence/</span> — observations only, never a pass or fail. The <strong style="color:var(--text)">validator</strong> then grades the task file requirement by requirement, weighing claim against evidence. Where the two disagree, the evidence wins. Splitting these roles is the point: the validator grades facts it did not gather, about code it did not write.
+            The <strong style="color:var(--text)">scout</strong> re-runs every verification command itself, reads the assertion bodies of the executor's tests, and writes its own edge-case probes to <span class="mono">.relay/probe/</span> — recording exit codes, real output and the actual diff to <span class="mono">.relay/evidence/</span> as observations only, never a pass or fail. It runs on Gemini, so that depth costs nothing. The <strong style="color:var(--text)">validator</strong> then grades the task file requirement by requirement, weighing claim against evidence. Where the two disagree, the evidence wins. Splitting these roles is the point: the validator grades facts it did not gather, about code it did not write.
           </div>
         </div>
       </div>
@@ -1766,7 +1766,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <tbody>
         <tr><td><strong style="color:var(--text)">Orchestrator</strong></td><td class="mono">Claude Opus</td><td>Writes the task spec, dispatches, decides. Your interactive session.</td></tr>
         <tr><td><strong style="color:var(--text)">Executor</strong></td><td class="mono">agy · gemini-3.6-flash-high</td><td>Implements the task. Never grades its own work.</td></tr>
-        <tr><td><strong style="color:var(--text)">Scout</strong></td><td class="mono">Claude Sonnet</td><td>Re-runs verification and records <strong style="color:var(--text)">observations only</strong> — never a verdict.</td></tr>
+        <tr><td><strong style="color:var(--text)">Scout</strong></td><td class="mono">agy · gemini-3.6-flash-high</td><td>Re-runs verification, probes edge cases, audits test assertions. Records <strong style="color:var(--text)">observations only</strong> — never a verdict.</td></tr>
         <tr><td><strong style="color:var(--text)">Validator</strong></td><td class="mono">Claude Opus</td><td>Grades spec vs. evidence. Does not fix the code it judges.</td></tr>
       </tbody>
     </table>
@@ -1780,7 +1780,22 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       latter — and the payoff is structural: the validator grades <em>facts it did not gather</em>, about code
       <em>written by a third agent</em>. Neither the claim nor the observation comes from the party being judged.
       Do not collapse the two roles back into one; an agent that gathers its own evidence just grades its own
-      summary of it.
+      summary of it. The executor and scout share a model — independence here comes from role separation, not
+      model identity: separate process, separate charter, and no visibility into the executor's reasoning.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">⚖️</span>
+    <div>
+      <strong style="color:var(--text)">The economics drive the design.</strong> The validator is the
+      <em>only</em> pane spending Claude quota — everything upstream runs on Antigravity CLI and is free. So
+      scouting is made <em>deep</em> (re-run every command, read the assertion bodies, write edge-case probes) and
+      then <em>compacted</em> before it reaches the validator: passing commands reduce to a one-line row, failures
+      are pasted verbatim. Green output carries almost no information; red output carries all of it. Exploiting
+      that asymmetry is what buys deep verification without a large token bill — and what keeps Opus affordable in
+      the one seat that is pure judgment. Hitting rate limits? Drop the validator to
+      <span class="mono">sonnet</span> before changing anything else.
     </div>
   </div>
 
@@ -1793,6 +1808,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <tr><td class="mono">.relay/results/NNN-slug.md</td><td>Executor</td><td>the claim</td></tr>
         <tr><td class="mono">.relay/evidence/NNN-slug.md</td><td>Scout</td><td>the observation</td></tr>
         <tr><td class="mono">.relay/reports/NNN-slug.md</td><td>Validator</td><td>the verdict</td></tr>
+        <tr><td class="mono">.relay/probe/</td><td>Scout</td><td>throwaway edge-case tests (scratch)</td></tr>
       </tbody>
     </table>
     <p style="font-size:13px;color:var(--text2);margin-top:14px;">

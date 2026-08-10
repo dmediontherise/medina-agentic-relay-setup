@@ -1,5 +1,5 @@
 ---
-description: "Run a full relay cycle: Gemini executes, Sonnet scouts evidence, Opus validates"
+description: "Run a full relay cycle: Gemini executes, Gemini scouts evidence, Opus validates"
 ---
 
 Run one full relay cycle for: $ARGUMENTS
@@ -55,8 +55,17 @@ usually an auth screen or an approval prompt, not a slow model.
 
 ## 4. Send the scout to gather evidence
 
-Sonnet re-runs the verification independently and records what actually happened. This
-runs before the validator so Opus grades observed facts rather than the executor's claims.
+The scout re-runs the verification independently and records what actually happened. This
+runs before the validator so the validator grades observed facts rather than the
+executor's claims. Scout and validator are separate panes with separate charters — that
+independence is the point, and it comes from role separation rather than from which model
+sits in each pane.
+
+The scout does more than re-run commands: it reads the assertion bodies of the executor's
+tests and writes its own edge-case probes under `.relay/probe/`. It runs on Gemini, so
+that depth is free. Its evidence file is compacted on purpose — passing commands reduce
+to a result line, failures are pasted in full — so the validator, which is Opus and the
+only Claude pane in the relay, spends its budget on judgment rather than on green logs.
 
 ```
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent scout -Task ".relay/tasks/NNN-<slug>.md"

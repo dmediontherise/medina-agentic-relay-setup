@@ -35,7 +35,7 @@ loop with an independent verification chain.
 |---|---|---|
 | **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides |
 | **Executor** | `agy` on `gemini-3.6-flash-high` | Implements the task. Never grades its own work |
-| **Scout** | Claude Sonnet | Re-runs verification, records **observations only** — never a verdict |
+| **Scout** | `agy` on `gemini-3.6-flash-high` | Re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
 | **Validator** | Claude Opus | Grades spec vs. evidence |
 
 ### Why the scout exists
@@ -51,6 +51,32 @@ being judged.
 Do not collapse the scout and validator back into one role. The independence chain is the
 entire point — an agent that gathers its own evidence grades its own summary of it.
 
+Note that the executor and the scout share a model. That does not weaken the chain:
+independence here comes from **role separation**, not model identity. The scout is a
+separate process with a separate charter that never sees the executor's reasoning — only
+the diff and the result file, both of which it treats as claims.
+
+### The economics, which drive the whole design
+
+The validator is the **only** pane that spends Claude quota. Everything upstream runs on
+Antigravity CLI and is effectively free.
+
+That single fact shapes both charters. Because scouting is free, it is made *deep* — the
+scout re-runs every verification command, reads the assertion bodies of the executor's
+tests, and writes its own edge-case probes. Because the validator is expensive, that depth
+is *compacted* before it arrives: passing commands reduce to a one-line table row, failing
+ones are pasted verbatim.
+
+Green output carries almost no information; red output carries all of it. Exploiting that
+asymmetry is what buys deep verification without a large token bill — and it is what keeps
+Opus affordable in the one seat that is pure judgment.
+
+> **If you hit rate limits**, drop the validator to `sonnet` before changing anything else.
+> It is the single lever that matters, and the relay still works. An earlier version of this
+> project ran the scout on Sonnet too; the two review panes together exhausted the limit
+> mid-run and stranded both on `/rate-limit-options` dialogs. Moving the scout to `agy` is
+> what fixed it.
+
 ---
 
 ## The file bus
@@ -64,6 +90,7 @@ and is forbidden by its charter from writing to the others.
 ├── results/NNN-slug.md    Executor writes      →  the claim
 ├── evidence/NNN-slug.md   Scout writes         →  the observation
 ├── reports/NNN-slug.md    Validator writes     →  the verdict
+├── probe/                 Scout's throwaway edge-case tests (scratch)
 ├── launch/                generated pane launcher scripts
 └── executor|scout|validator.md   charters, copied in at `up`
 ```
@@ -210,8 +237,8 @@ Requirements must be checkable by someone who did not write them.
 
 ## Permissions, and what they actually buy you
 
-By default the scout and validator run with `--permission-mode bypassPermissions`, and the
-executor with `--dangerously-skip-permissions`.
+By default the validator runs with `--permission-mode bypassPermissions`, and the executor
+and scout with `--dangerously-skip-permissions`.
 
 This is deliberate but not free, so decide with your eyes open. `acceptEdits` sounds like
 the safer default and does not work here: it gates **every new Bash command shape** behind
@@ -223,6 +250,10 @@ So what keeps the scout and validator from editing the code they are judging is 
 charters, not a sandbox**. That is a convention. It has held in testing, but point this at
 a repo you care about with your eyes open, and prefer a scratch clone or worktree the
 first few times.
+
+`.relay/probe/` exists partly for this reason: the scout needs somewhere legitimate to
+write its edge-case tests, and giving it a sanctioned scratch directory removes most of
+the reason it would ever reach for a project file.
 
 Pass `--safe` (bash) or `-Safe` (PowerShell) to trade autonomy back for a human in the
 loop: reviewers drop to `acceptEdits`, the executor to `--mode accept-edits`, and you
@@ -279,6 +310,16 @@ that thread into a concrete concern, while correctly declining to fail the task 
 something no numbered requirement covered. It also refused to take the evidence on faith
 about test *quality* — collected test names cannot distinguish real tests from well-named
 stubs — and read the assertion bodies itself.
+
+That last behaviour is where the 2026-08-09 changes came from. The validator improvising an
+assertion-body review was the most valuable thing in the run, and it was happening in the
+most expensive seat. It is now the scout's contractual duty, alongside edge-case probing —
+work that got cheap the moment the scout moved off Claude.
+
+**Not yet proven end to end:** the 2026-08-09 configuration — `agy` scout, the probe leg,
+the assertion audit, and the compacted evidence format — is syntax-checked and reviewed but
+has not been exercised on a real task. The 2026-08-08 run above was the Sonnet-scout build.
+Treat the new verification depth as designed-but-unproven until someone runs a cycle on it.
 
 ---
 

@@ -2,10 +2,18 @@
 .SYNOPSIS
   Medina Agentic Relay - psmux control plane.
 
-  Opus (orchestrator) drives Gemini (executor) and Sonnet (validator) as live
-  panes in a psmux session. Content moves over a file bus (.relay/) so results
-  are clean and lossless; psmux provides process persistence, liveness and the
-  ability to send follow-up instructions into a running agent.
+  Opus (orchestrator) drives two Gemini panes - executor and scout - and an Opus
+  validator, as live panes in a psmux session. Content moves over a file bus
+  (.relay/) so results are clean and lossless; psmux provides process
+  persistence, liveness and the ability to send follow-up instructions into a
+  running agent.
+
+  Cost shape as of 2026-08-09: the validator is the ONLY Claude pane. Executor
+  and scout both run Antigravity CLI and spend no Claude quota, so evidence
+  gathering is effectively free and is deliberately made deep (re-run, probe,
+  assertion audit). The scout compacts that depth into a capped evidence file,
+  so the one paid pane reads findings rather than raw log volume - which is what
+  makes Opus affordable in the seat where judgment actually happens.
 
 .NOTES
   Windows PowerShell 5.1 compatible. No pwsh 7 syntax.
@@ -122,7 +130,10 @@ function Resolve-BusPath($state, $path) {
 }
 
 function New-BusDirs($ws) {
-    foreach ($d in 'tasks', 'results', 'evidence', 'reports', 'logs') {
+    # 'probe' is the scout's sanctioned scratch area. It writes throwaway edge-case
+    # tests there rather than into the project's own test tree, so probing never
+    # pollutes the diff the scout is simultaneously reporting on.
+    foreach ($d in 'tasks', 'results', 'evidence', 'reports', 'logs', 'probe') {
         New-Item -ItemType Directory -Force (Join-Path $ws ".relay\$d") | Out-Null
     }
 }
@@ -311,11 +322,11 @@ if ($Command -eq 'up') {
         $agyExe = 'agy'
     }
     if (-not $claudeExe) {
-        Write-Host "[relay] WARNING: 'claude' not found - scout and validator will not start." -ForegroundColor Yellow
+        Write-Host "[relay] WARNING: 'claude' not found - the validator will not start." -ForegroundColor Yellow
         $claudeExe = 'claude'
     }
-    Say "executor bin : $agyExe"
-    Say "claude  bin  : $claudeExe"
+    Say "agy    bin   : $agyExe   (executor + scout)"
+    Say "claude bin   : $claudeExe   (validator)"
 
     # --- build the launchers, then create panes that RUN them -----------------
     # Do not type launch commands into an interactive shell. Two independent psmux
@@ -341,27 +352,44 @@ if ($Command -eq 'up') {
     }
 
     # Executor: Antigravity CLI on Gemini 3.6 Flash (High) - fast, high volume.
+    $agyModel = 'gemini-3.6-flash-high'
     $agyFlags = '--dangerously-skip-permissions'
     if ($Safe) { $agyFlags = '--mode accept-edits' }
     $agyBoot = "Read .relay/executor.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for task files."
-    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" --model gemini-3.6-flash-high $agyFlags -i `"$agyBoot`"`r`n"
+    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" --model $agyModel $agyFlags -i `"$agyBoot`"`r`n"
 
     # acceptEdits permits file edits but still gates every new Bash command shape behind
-    # an approval prompt - which strands the scout and validator, whose entire job is
-    # running verification commands. An unattended pane sitting on that prompt is this
-    # relay's classic silent stall. User chose bypassPermissions (2026-08-08); the
-    # charters, not the sandbox, are what keep these two panes from editing code.
-    # -Safe trades autonomy back for a human in the loop.
+    # an approval prompt - which strands a review pane, whose entire job is running
+    # verification commands. An unattended pane sitting on that prompt is this relay's
+    # classic silent stall. User chose bypassPermissions (2026-08-08); the charter, not
+    # the sandbox, is what keeps the validator from editing the code it grades.
+    # -Safe trades autonomy back for a human in the loop. Applies to the validator only
+    # now that the scout has moved to agy and takes $agyFlags instead.
     $claudeMode = 'bypassPermissions'
     if ($Safe) { $claudeMode = 'acceptEdits' }
 
-    # Validator: Opus 5 - judgment only, grades against evidence it did not gather.
+    # Validator: Opus 5. Judgment only, grading evidence it did not gather.
+    #
+    # It ran Opus originally, was downgraded to Sonnet on 2026-08-08 after the validator
+    # and the then-Sonnet scout together burned through the Claude limit mid-run and
+    # stranded the relay on /rate-limit-options dialogs, and was restored to Opus on
+    # 2026-08-09 once the scout moved to agy. That restoration is not a reversal of the
+    # earlier call - the condition behind it changed. This is now the only pane spending
+    # Claude quota at all, so the whole budget goes to the one step that is pure judgment.
+    #
+    # If rate limits ever bite here again, drop this to sonnet before touching anything
+    # else: it is the single lever that matters, and the relay keeps working on Sonnet.
     $valBoot = "Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
     $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model opus --permission-mode $claudeMode `"$valBoot`"`r`n"
 
-    # Scout: Sonnet 5 - mechanical evidence gathering and stall watchdog.
+    # Scout: agy on the same Gemini tier as the executor (user's call, 2026-08-09; there
+    # is no 3.6 Pro tier - see 'agy models'). Independence comes from role separation,
+    # not model identity: a separate process with a separate charter, which did not write
+    # the code and sees only the diff and the result file. Same launch posture this pane
+    # already ran under, carried over unchanged via $agyFlags. Its charter keeps it out of
+    # the source tree, and .relay/probe/ gives it a sanctioned place to write instead.
     $scoutBoot = "Read .relay/scout.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
-    $scoutLauncher = Write-Launcher 'scout' "& `"$claudeExe`" --model sonnet --permission-mode $claudeMode `"$scoutBoot`"`r`n"
+    $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" --model $agyModel $agyFlags -i `"$scoutBoot`"`r`n"
 
     # Bus pane: live view of artifacts landing on the file bus.
     $watchBody = @(
@@ -423,10 +451,10 @@ if ($Command -eq 'up') {
     Clear-TrustPrompts @($ids['0'], $ids['1'], $ids['2'])
 
     Say "Relay up."
-    Say "  executor  (agy / gemini-3.6-flash-high) -> $($ids['0'])"
-    Say "  validator (claude opus)                 -> $($ids['1'])"
-    Say "  scout     (claude sonnet)               -> $($ids['2'])"
-    Say "  bus watch                               -> $($ids['3'])"
+    Say "  executor  (agy / $agyModel) -> $($ids['0'])"
+    Say "  validator (claude opus)                  -> $($ids['1'])"
+    Say "  scout     (agy / $agyModel) -> $($ids['2'])"
+    Say "  bus watch                                -> $($ids['3'])"
     Say "Attach with: psmux attach -t $Session"
     if ($script:ScaffoldedNew) {
         Write-Host ""
@@ -471,7 +499,7 @@ if ($Command -eq 'status') {
 
 # ============================================================ SEND ===========
 if ($Command -eq 'send') {
-    if (-not $Agent) { Fail "-Agent required (executor|validator)" }
+    if (-not $Agent) { Fail "-Agent required (executor|scout|validator)" }
     if (-not $Text)  { Fail "-Text required" }
     $s = Get-State
     Send-Line (Get-PaneTarget $s $Agent) $Text
@@ -492,7 +520,7 @@ if ($Command -eq 'dispatch') {
     if (-not $agentName) { $agentName = 'executor' }
     $msg = "New task on the bus: $rel . Read it, execute it per your contract in .relay/executor.md, and write your completion report to the results path named in the task."
     if ($agentName -eq 'scout') {
-        $msg = "Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification commands yourself, record what you observe, and write to the evidence path named in the task. Do not issue a verdict."
+        $msg = "Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Observations only, no verdict."
     }
     if ($agentName -eq 'validator') {
         $msg = "Grade this task: $rel . Follow your contract in .relay/validator.md - read the task, the executor result, and the scout evidence, then write your verdict to the report path named in the task."
@@ -504,7 +532,7 @@ if ($Command -eq 'dispatch') {
 
 # ========================================================= CAPTURE ===========
 if ($Command -eq 'capture') {
-    if (-not $Agent) { Fail "-Agent required (executor|validator)" }
+    if (-not $Agent) { Fail "-Agent required (executor|scout|validator)" }
     $s = Get-State
     $target = Get-PaneTarget $s $Agent
     $out = psmux capture-pane -t $target -p

@@ -1,5 +1,5 @@
 ---
-description: "Bring up the agentic relay (agy executor + Sonnet scout + Opus validator panes)"
+description: "Bring up the agentic relay (agy executor + agy scout + Opus validator panes)"
 ---
 
 Start the multi-agent relay for the current workspace.
