@@ -414,10 +414,40 @@ gets the facts, the validator gets the judgment, and the verdict is right even w
 them is wrong.** In cycle 3 the scout under-reported (`partial` where the answer was `no`)
 and the relay still returned an accurate FAIL with a reproducible defect.
 
-One more thing, seen in cycles 2 and 3 both: the executor reported a single-line
+- **A fourth cycle** closed the loop the other three left open: FAIL → scoped fix →
+  re-validate. The orchestrator wrote the validator's recommended fix task, carrying its
+  ruling forward as explicit spec amendments. Verdict: PASS-WITH-CONCERNS, defects none.
+
+Two things from that cycle are worth lifting out.
+
+**The validator ran a mutation check nobody asked it to.** Rather than accept that the two
+new tests passed, it established they *fail against the pre-fix implementation* — the
+property that separates a test which pins the change from one that passes incidentally.
+Confirmed by hand: reverting `ranking.py` alone leaves both new tests red, and the fix turns
+them green. This is the "red-check" tier that was considered and deliberately left out of
+the scout's standing duties for cost and complexity reasons. The expensive pane invented it
+at the one moment it was decisive, which is a reasonable argument for leaving it out of the
+cheap pane's checklist.
+
+**It found a defect in the task spec, written by the orchestrator.** The Objective promised
+exactly `n` names "whenever `n` names can be returned without splitting a tie group," which
+a greedy descending scan cannot deliver: `rank({'a':100,'b':50,'c':50}, 2)` returns `['a']`
+though `['b','c']` satisfies the promise. Requirement 1 was mechanical and unambiguous, so
+the executor was right to follow it; the Objective was the wrong text. **Grading against
+the task file means the task file gets graded too** — worth knowing if you write specs for
+this thing, because it will find yours.
+
+The scout, meanwhile, hit that same conflict in a probe and resolved it silently against
+amendment B, reporting `Open questions: None`. Defensible answer, but the decision was not
+the scout's to make — the same failure mode as cycle 3, smaller, and now visible because
+there is a section it should have appeared in.
+
+One last thing, seen in cycles 2 and 3: the executor reported a single-line
 `python -c "... try: ... except ..."` as exiting 0 with the expected output. That string is
 a `SyntaxError`. **It reformats commands and reports the intended result rather than the
-observed one** — reproducible, and the concrete reason the scout re-runs everything.
+observed one** — reproducible, and the concrete reason the scout re-runs everything. Cycle 4
+avoided the construct entirely and had no transcript discrepancy, which suggests writing
+verification commands that survive reformatting is the cheaper fix.
 
 
 ---
