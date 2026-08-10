@@ -233,6 +233,46 @@ Requirements must be checkable by someone who did not write them.
 - report:   `.relay/reports/001-slug.md`
 ```
 
+#### Write verification commands that survive reformatting
+
+Learned the expensive way across four cycles. **The executor rewrites commands it cannot
+run and then reports the result it expected**, not the one it observed. It reported this
+as exiting 0 with the intended output:
+
+```
+python -c "from m import f; try: f(bad); print('NO-RAISE'); except ValueError as e: print('RAISED')"
+```
+
+That string is a `SyntaxError` — a compound statement cannot follow a semicolon. The
+executor silently reformatted it across lines, ran *that*, and pasted the passing result
+under the original one-liner. The scout caught it both times by re-running verbatim, but
+a discrepancy you can avoid writing is cheaper than one you have to catch.
+
+So: **every verification command must be a single line that actually runs as written.**
+No `try`/`except`, `if` or `for` after a semicolon in a `python -c`. Three patterns that
+hold up, all verified:
+
+```
+# exact stdout, the clearest kind
+python -c "import m; print(m.f('1h30m'))"                      -> 5400
+
+# assertion form - exit 0 passes, exit 1 fails, no output to eyeball
+python -c "import m; assert m.f('1h30m') == 5400; print('OK')"  -> OK
+
+# "it raises" without a compound statement
+python -c "import pytest, m; pytest.raises(ValueError, m.f, '')" -> exit 0
+python -c "import m; m.f('')"                                    -> exit 1, ValueError
+```
+
+Better still, push behavioural assertions into the test suite and let `pytest -q` be the
+verification command. One line, no quoting hazards, and the scout audits the assertions
+anyway.
+
+One more thing this run taught: **the validator grades the task file too.** In cycle 4 it
+found the Objective promised something the requirements could not deliver, and said so.
+Write the Objective as a summary of the requirements, not as a stronger claim than they
+support.
+
 ---
 
 ## Permissions, and what they actually buy you

@@ -38,6 +38,42 @@ Commands that must pass, with expected outcome:
 Requirements must be checkable by someone who did not write them — the validator
 grades against this file, so vagueness here produces a worthless verdict.
 
+### Two rules for this file, both learned from real cycles
+
+**1. Every verification command must be a single line that runs as written.** The executor
+rewrites commands it cannot run and then reports the result it expected rather than the one
+it observed. It has repeatedly reported this as exiting 0 with the intended output:
+
+```
+python -c "from m import f; try: f(bad); print('NO-RAISE'); except ValueError as e: print('RAISED')"
+```
+
+That is a `SyntaxError` — a compound statement cannot follow a semicolon. The executor
+reformats it across lines, runs *that*, and pastes the passing result under the original.
+The scout catches it by re-running verbatim, but a discrepancy you can avoid writing is
+cheaper than one you have to catch. So no `try`/`except`, `if` or `for` after a semicolon
+in a `python -c`. Use one of these instead:
+
+```
+python -c "import m; print(m.f('1h30m'))"                        -> 5400
+python -c "import m; assert m.f('1h30m') == 5400; print('OK')"   -> OK
+python -c "import pytest, m; pytest.raises(ValueError, m.f, '')" -> exit 0
+python -c "import m; m.f('')"                                    -> exit 1, ValueError
+```
+
+Better still, put behavioural assertions in the test suite and make `pytest -q` the
+verification command — one line, no quoting hazards, and the scout audits the assertions
+anyway.
+
+**2. The Objective is graded too.** Write it as a summary of the requirements, never as a
+stronger claim than they support. A validator has already failed a task's Objective for
+promising an outcome the requirements could not deliver — the executor followed the
+requirements and was right to, and the spec was what was wrong.
+
+Where two requirements can conflict on some input, decide it in the task rather than
+leaving it for the executor to resolve silently. If you genuinely want it left open, say so
+explicitly so the scout files it as an open question instead of guessing.
+
 ## 2. Dispatch to the executor
 
 ```
