@@ -12,6 +12,14 @@ Shut down the relay.
    is still running and confirm before tearing down — killing the session loses that
    agent's in-memory context, though bus artifacts on disk survive.
 
+   **If autopilot is running, stop it first.** Tearing the session out from under it
+   leaves it dispatching into dead panes until its restart budget runs out. Create the
+   stop file and let it finish the phase it is in:
+   ```
+   New-Item -ItemType File "<workspace>\.relay\STOP"
+   ```
+   Then wait for the autopilot process to exit before running `down`.
+
 2. Tear down:
    ```
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" down

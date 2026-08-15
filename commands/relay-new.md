@@ -24,12 +24,11 @@ Create a new project and start the relay on it: $ARGUMENTS
 
 4. Confirm the agents actually booted before calling it ready:
    ```
-   powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" capture -Agent executor -Lines 20
-   powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" capture -Agent scout -Lines 20
+   powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
    ```
-   A pane on a trust gate, an auth screen, or an approval dialog looks identical to a
-   busy one. Do not report the relay as ready until you have seen each pane past its
-   prompt.
+   All four agents — executor, scout, mutator, validator — must come back clean. Do not
+   read this off a capture: a pane on a trust gate looks identical to a busy one, and a
+   pane whose agent has crashed looks identical to an idle one.
 
 5. Offer to fill in `.relay/tasks/001-first-task.md` with the user. That file is the
    contract the validator grades against, so vague requirements there produce a

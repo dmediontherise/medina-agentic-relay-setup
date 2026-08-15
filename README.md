@@ -1,8 +1,13 @@
 # Medina Agentic Relay
 
 A closed-loop multi-agent relay. One orchestrator writes specs and grades outcomes;
-three agents in live terminal panes implement, verify, and judge. Coordination happens
-over a file bus, so results are lossless and every step leaves a durable artifact.
+four agents in live terminal panes implement, verify, mutation-test, and judge.
+Coordination happens over a file bus, so results are lossless and every step leaves a
+durable artifact.
+
+`autopilot` runs the whole queue unattended — execute → scout → validate per task, with
+the mutation lane in parallel — restarting broken panes on its own and stopping when the
+work stops converging. Only the validator spends Claude quota.
 
 The setup guide site lives in [`index.html`](index.html). The runnable control plane
 lives in [`relay/`](relay/).
@@ -29,14 +34,15 @@ loop with an independent verification chain.
 
 ---
 
-## The four roles
+## The five roles
 
 | Role | Model | Job |
 |---|---|---|
-| **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides |
+| **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides. Under `autopilot`, only the first of those |
 | **Executor** | `agy` on `gemini-3.6-flash-high` | Implements the task. Never grades its own work |
 | **Scout** | `agy` on `gemini-3.6-flash-high` | Re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
-| **Validator** | Claude Opus | Grades spec vs. evidence |
+| **Mutator** | `agy` on `gemini-3.6-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
+| **Validator** | Claude Opus | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
 
 ### Why the scout exists
 
@@ -90,10 +96,21 @@ and is forbidden by its charter from writing to the others.
 ├── results/NNN-slug.md    Executor writes      →  the claim
 ├── evidence/NNN-slug.md   Scout writes         →  the observation
 ├── reports/NNN-slug.md    Validator writes     →  the verdict
+├── mutation/NNN-slug.md   Mutator writes       →  surviving mutants
 ├── probe/                 Scout's throwaway edge-case tests (scratch)
+├── mutants/<task>/        Mutator's isolated worktree snapshot per task
+├── logs/                  autopilot run logs
 ├── launch/                generated pane launcher scripts
-└── executor|scout|validator.md   charters, copied in at `up`
+├── STOP                   touch this to halt an autopilot run cleanly
+└── executor|scout|mutator|validator.md   charters, copied in at `up`
 ```
+
+The **mutator** is a second scout that does one thing the first structurally cannot. The
+scout may not edit source — that prohibition is what makes its evidence trustworthy, since
+it cannot repair what it reports on — but mutation testing *requires* editing source. So
+the rule is relocated rather than relaxed: the mutator edits freely inside a snapshot at
+`.relay/mutants/<task>/` and never touches the live tree. It is never on the critical
+path, so a verdict is never held behind it.
 
 ---
 
@@ -127,6 +144,13 @@ Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 ```
 
 **macOS / Linux**
+
+> **`relay.sh` is behind `relay.ps1` and does not have the features described above.**
+> It is still the three-agent design: no mutator pane, no `autopilot`, no process-level
+> crash detection, and no `snapshot`. It has also only ever been tested against a stubbed
+> tmux, never real tmux. The charters and slash commands are shared and current, but the
+> macOS/Linux control plane needs porting before it matches this README. Treat the
+> PowerShell version as the reference implementation.
 
 ```bash
 git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
@@ -177,8 +201,8 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 ~/.claude/relay/relay.sh up -w .
 ```
 
-Then drive a full cycle from your Claude session with `/relay-task <what you want built>`,
-or by hand:
+Then drive a full cycle from your Claude session with `/relay-task <what you want built>`.
+For a queue of tasks, `/relay-auto` runs all of them unattended. Or by hand:
 
 ```bash
 R=~/.claude/relay/relay.sh                 # Windows: see the PowerShell form above
@@ -501,11 +525,13 @@ relay/
 └── charters/              agent operating contracts
     ├── executor.md
     ├── scout.md
+    ├── mutator.md
     └── validator.md
 commands/                  Claude Code slash commands
 ├── relay-new.md           scaffold a project + bring the relay up
 ├── relay-up.md            bring the relay up on an existing project
-├── relay-task.md          run a full cycle
+├── relay-task.md          run a full cycle, driven step by step
+├── relay-auto.md          run the whole queue unattended (autopilot)
 ├── relay-status.md        health and bus contents
 └── relay-down.md          tear it down
 index.html                 setup guide site
