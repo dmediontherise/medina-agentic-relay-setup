@@ -3,16 +3,24 @@ Pull the latest superpowers from GitHub and refresh all local skills and command
 Run these bash commands in sequence:
 
 ```bash
-git -C /c/Users/mrlgp/.claude/superpowers pull origin main
+git -C "$HOME/.claude/superpowers" pull origin main
 ```
 
 Then copy updated skills and commands:
 
 ```bash
-cp -r /c/Users/mrlgp/.claude/superpowers/skills/* /c/Users/mrlgp/.claude/skills/
-cp /c/Users/mrlgp/.claude/superpowers/commands/* /c/Users/mrlgp/.claude/commands/
+mkdir -p "$HOME/.claude/skills" "$HOME/.claude/commands"
+cp -r "$HOME/.claude/superpowers/skills/." "$HOME/.claude/skills/"
+cp "$HOME/.claude/superpowers/commands/"*.md "$HOME/.claude/commands/"
 ```
 
 After syncing, show the user:
-1. The last 5 git commits: `git -C /c/Users/mrlgp/.claude/superpowers log --oneline -5`
+1. The last 5 git commits: `git -C "$HOME/.claude/superpowers" log --oneline -5`
 2. Confirm: "Superpowers synced to version X.Y.Z — skills and commands updated."
+
+If the first command fails with `not a git repository`, the superpowers repo has not been
+cloned yet. Clone it rather than creating the directory by hand:
+
+```bash
+git clone https://github.com/obra/superpowers.git "$HOME/.claude/superpowers"
+```
