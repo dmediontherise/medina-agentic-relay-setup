@@ -145,12 +145,15 @@ Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 
 **macOS / Linux**
 
-> **`relay.sh` is behind `relay.ps1` and does not have the features described above.**
-> It is still the three-agent design: no mutator pane, no `autopilot`, no process-level
-> crash detection, and no `snapshot`. It has also only ever been tested against a stubbed
-> tmux, never real tmux. The charters and slash commands are shared and current, but the
-> macOS/Linux control plane needs porting before it matches this README. Treat the
-> PowerShell version as the reference implementation.
+> **`relay.sh` now matches `relay.ps1`** — same fourteen subcommands, the mutator pane,
+> `autopilot`, `snapshot`, and process-level crash detection. Written for bash 3.2, so it
+> runs on macOS's system bash without installing a newer one.
+>
+> Caveat worth knowing: its git/snapshot logic has been exercised directly, but the
+> tmux-facing paths have only been run against psmux (a tmux-3.3.7-compatible
+> reimplementation), never against real tmux on macOS or Linux. Behaviour should be
+> identical — the script uses only documented tmux commands — but if something misbehaves
+> on a real tmux, that is the untested seam. Report it rather than working around it.
 
 ```bash
 git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
