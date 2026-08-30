@@ -610,8 +610,11 @@ if ($Command -eq 'up') {
         return $path
     }
 
-    # Executor: Antigravity CLI on Gemini 3.6 Flash (High) - fast, high volume.
-    $agyModel = 'gemini-3.6-flash-high'
+    # Executor: Antigravity CLI on Gemini 3.7 Flash (High) - fast, high volume.
+    # Moved 3.6 -> 3.7 on 2026-08-29. Still the top reasoning tier of the flash line
+    # ('agy models' lists high/medium/low only - there is no 3.7 Pro), so the launch
+    # posture and every charter assumption carry over unchanged.
+    $agyModel = 'gemini-3.7-flash-high'
     $agyFlags = '--dangerously-skip-permissions'
     if ($Safe) { $agyFlags = '--mode accept-edits' }
 
@@ -638,19 +641,27 @@ if ($Command -eq 'up') {
     $claudeMode = 'bypassPermissions'
     if ($Safe) { $claudeMode = 'acceptEdits' }
 
-    # Validator: Opus 5. Judgment only, grading evidence it did not gather.
+    # Validator: Sonnet 5. Judgment only, grading evidence it did not gather.
     #
-    # It ran Opus originally, was downgraded to Sonnet on 2026-08-08 after the validator
-    # and the then-Sonnet scout together burned through the Claude limit mid-run and
-    # stranded the relay on /rate-limit-options dialogs, and was restored to Opus on
-    # 2026-08-09 once the scout moved to agy. That restoration is not a reversal of the
-    # earlier call - the condition behind it changed. This is now the only pane spending
-    # Claude quota at all, so the whole budget goes to the one step that is pure judgment.
+    # Model history, because the round trip looks like indecision and is not: Opus
+    # originally -> Sonnet on 2026-08-08 (the validator and the then-Sonnet scout together
+    # burned the Claude limit mid-run and stranded the relay on /rate-limit-options) ->
+    # back to Opus on 2026-08-09 once the scout moved to agy and freed the whole budget
+    # -> Sonnet again on 2026-08-29, this time by choice rather than by rate limit.
     #
-    # If rate limits ever bite here again, drop this to sonnet before touching anything
-    # else: it is the single lever that matters, and the relay keeps working on Sonnet.
+    # Sonnet in this seat is the lever the earlier comment always named as the first one
+    # to pull, and the relay is built to survive it: the scout compacts evidence hard
+    # before it ever reaches this pane, and the validator's job is judgment over a small
+    # prepared record, not gathering. Opus stays in the orchestrator seat, so the harder
+    # reasoning - writing specs, deciding scope, taking escalations - is still Opus.
+    #
+    # What to watch now that this pane is cheaper: the validator's standing rules are
+    # what make the loop terminate ('suspiciously clean is a signal', treat scout
+    # conclusions as claims not facts, never queue work off a mere concern). If those
+    # start slipping, that is the signal to put Opus back here - not raw verdict accuracy,
+    # which looks fine right up until the loop stops terminating.
     $valBoot = "Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
-    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model opus --permission-mode $claudeMode `"$valBoot`"`r`n"
+    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model sonnet --permission-mode $claudeMode `"$valBoot`"`r`n"
 
     # Scout: agy on the same Gemini tier as the executor (user's call, 2026-08-09; there
     # is no 3.6 Pro tier - see 'agy models'). Independence comes from role separation,
@@ -791,7 +802,7 @@ if ($Command -eq 'up') {
 
     Say "Relay up - all four agents answered."
     Say "  executor  (agy / $agyModel) -> $($ids['0'])"
-    Say "  validator (claude opus)                  -> $($ids['1'])"
+    Say "  validator (claude sonnet)                -> $($ids['1'])"
     Say "  scout     (agy / $agyModel) -> $($ids['2'])"
     Say "  mutator   (agy / $agyModel) -> $($ids['3'])"
     Say "  bus watch                                -> $($ids['4'])"

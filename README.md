@@ -39,10 +39,10 @@ loop with an independent verification chain.
 | Role | Model | Job |
 |---|---|---|
 | **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides. Under `autopilot`, only the first of those |
-| **Executor** | `agy` on `gemini-3.6-flash-high` | Implements the task. Never grades its own work |
-| **Scout** | `agy` on `gemini-3.6-flash-high` | Re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
-| **Mutator** | `agy` on `gemini-3.6-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
-| **Validator** | Claude Opus | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
+| **Executor** | `agy` on `gemini-3.7-flash-high` | Implements the task. Never grades its own work |
+| **Scout** | `agy` on `gemini-3.7-flash-high` | Re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
+| **Mutator** | `agy` on `gemini-3.7-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
+| **Validator** | Claude Sonnet | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
 
 ### Why the scout exists
 
@@ -74,14 +74,16 @@ is *compacted* before it arrives: passing commands reduce to a one-line table ro
 ones are pasted verbatim.
 
 Green output carries almost no information; red output carries all of it. Exploiting that
-asymmetry is what buys deep verification without a large token bill — and it is what keeps
-Opus affordable in the one seat that is pure judgment.
+asymmetry is what buys deep verification without a large token bill — and it is what lets
+the one seat that is pure judgment run on a small prepared record.
 
-> **If you hit rate limits**, drop the validator to `sonnet` before changing anything else.
-> It is the single lever that matters, and the relay still works. An earlier version of this
-> project ran the scout on Sonnet too; the two review panes together exhausted the limit
-> mid-run and stranded both on `/rate-limit-options` dialogs. Moving the scout to `agy` is
-> what fixed it.
+> **On validator model choice.** This seat ran Opus originally and moved to Sonnet on
+> 2026-08-29. It works because the scout compacts evidence hard before it ever arrives, so
+> the validator grades a small record rather than gathering one. The orchestrator stays on
+> Opus, so spec writing, re-scoping and escalations still get the larger model. An earlier
+> version of this project ran the *scout* on Sonnet too; the two review panes together
+> exhausted the limit mid-run and stranded both on `/rate-limit-options` dialogs. Moving
+> the scout to `agy` is what fixed that, and it is what makes a cheaper validator safe.
 
 ---
 

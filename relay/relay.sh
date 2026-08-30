@@ -495,7 +495,7 @@ cmd_up() {
   say "claude bin   : $claude_exe   (validator)"
 
   local launch="$workspace/.relay/launch"
-  local agy_model="gemini-3.6-flash-high"
+  local agy_model="gemini-3.7-flash-high"
   local exec_flags="--dangerously-skip-permissions"
   local claude_mode="bypassPermissions"
   if [ "$safe" -eq 1 ]; then
@@ -530,7 +530,7 @@ cmd_up() {
   # executor edits the real tree for task 008.
   local l_exec l_val l_scout l_mut l_bus
   l_exec="$(write_launcher executor  "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$exec_boot")")"
-  l_val="$(write_launcher  validator "$(printf 'exec %q --model opus --permission-mode %s %q' "$claude_exe" "$claude_mode" "$val_boot")")"
+  l_val="$(write_launcher  validator "$(printf 'exec %q --model sonnet --permission-mode %s %q' "$claude_exe" "$claude_mode" "$val_boot")")"
   l_scout="$(write_launcher scout    "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$scout_boot")")"
   l_mut="$(write_launcher  mutator   "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
@@ -596,7 +596,7 @@ cmd_up() {
 
   say "Relay up - all four agents answered."
   say "  executor  (agy / $agy_model) -> $EXECUTOR_PANE"
-  say "  validator (claude opus)                  -> $VALIDATOR_PANE"
+  say "  validator (claude sonnet)                -> $VALIDATOR_PANE"
   say "  scout     (agy / $agy_model) -> $SCOUT_PANE"
   say "  mutator   (agy / $agy_model) -> $MUTATOR_PANE"
   say "  bus watch                                -> $BUS_PANE"
