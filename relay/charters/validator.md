@@ -63,6 +63,13 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
      requirement is load-bearing for the verdict.
    - More than one Source on a row is a contract violation and usually hides a weak half.
      Grade the row on the strongest Source you can verify, and note the rest in Concerns.
+   - Every `file:line` must carry the name at that line in parentheses. Check the name
+     against the requirement before you open anything - a mismatch means the number is
+     wrong. On tasks 036 and 037 every cited range was off by a constant ~333 lines and
+     still resolved, landing in real but unrelated code, so it read as corroboration.
+     A missing parenthetical is itself the finding: the scout computed the number instead
+     of reading it. Note it in Concerns rather than silently re-deriving the location,
+     which is how a systematic offset stays invisible for several tasks in a row.
 
    `direct` is otherwise defined by execution. A row whose Source is a regex, a grep, or
    a `file:line` the scout only read is `partial` whatever the column says — downgrade it

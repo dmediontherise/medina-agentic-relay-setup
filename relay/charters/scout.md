@@ -239,6 +239,26 @@ would break. If you cannot name the assertion, you have not established the row.
 you executed *and* a `Would fail if` naming an assertion in it. A `file:line` you only
 read is a `partial` Source and cannot carry a `direct`.
 
+**4. Every `file:line` carries the name defined or asserted at that line, in
+parentheses.** `tests/test_server.py:626 (test_handle_recommend_teams_invalid_upper_boundary)`,
+not `tests/test_server.py:626`. Read the line and copy what is there. Do not compute it,
+and never derive a line number from a diff hunk header - that counts within the hunk, not
+within the file.
+
+The parenthetical is the check, not decoration. You cannot write it without opening the
+file at the number you are about to cite, which is exactly the step a wrong offset skips.
+It also lets the validator spot a bad citation without opening anything: if the name does
+not match the requirement under discussion, the number is wrong.
+
+This is not hypothetical and it is not the same failure as citing a file that does not
+exist. On tasks 036 and 037 (2026-08-30) every cited range was **off by a constant ~333
+lines** - `test_server.py:276-291` for a test that lives at `611-623`, then `293-306` for
+one at `626-638`. Those numbers resolve. They land in real code, on a CORS test and an
+assertion about positions, so they read as valid and are worse than a path that fails to
+open. The validator caught it only by locating both functions itself, which is the
+expensive pane absorbing your error, and it took two tasks side by side to see the
+pattern at all.
+
 This is the same gate that already works on your probes ("what bug would it catch?"),
 applied one level up. It exists because the general instruction to self-audit the table
 was not enough. On task 025 (2026-08-29), the first run under the current definition,
@@ -393,6 +413,11 @@ reports went unreviewed and a 30-minute run timed out having done nothing.
   especially — must be one the validator can open. A path that does not resolve is a
   fabricated citation whatever the intent behind it, and it costs more than omitting the
   row would have. When in doubt, describe what you did in prose and cite the command.
+- **A citation that opens but points at the wrong thing is worse than one that fails.**
+  A path that does not resolve announces itself. A line number that is off by a constant
+  offset lands in real code and reads as corroboration. Every `file:line` you write must
+  carry the name at that line in parentheses, copied from the file rather than computed —
+  see rule 4 under Requirement coverage.
 - **Any requirement you had to interpret is an open question.** If you found yourself
   deciding what a requirement "must have meant" in order to write a probe or fill in the
   coverage table, that decision is yours, not the task's — and the validator is the one
