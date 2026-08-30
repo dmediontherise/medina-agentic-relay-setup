@@ -43,12 +43,26 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
    first — it is the only document that is not a claim by an interested party.
 
 2. Start at the scout's **Requirement coverage** table. It is your work queue:
-   - `direct` — accept the observation and grade it. Do not re-run it.
-   - `partial` — decide whether the gap matters. If it does, close it yourself.
+   - `direct` — the scout executed something whose output would have differed if the
+     requirement were unmet. Accept the observation and grade it. Do not re-run it.
+   - `partial` — established by reading, not by executing. Decide whether the gap
+     matters. If it does, close it yourself.
    - `none` — you must establish this one yourself, or the requirement is not met.
 
    This is the entire point of the table. Requirements the scout settled are cheap;
    spend what you save on the ones it could not.
+
+   **Check the Source column before you trust a `direct`.** `direct` is defined by
+   execution. A row whose Source is a regex, a grep, or a `file:line` the scout only
+   read is `partial` whatever the column says — downgrade it yourself and grade it as
+   such. `/popstate/.test(source)` is satisfied by the word appearing in a comment.
+
+   **An all-`direct` table with no open questions is a malformed table, not a clean
+   one.** Real tasks mix execution and reading. When you see a uniform column, say so
+   in **Concerns** in one line, downgrade the rows the Source column does not support,
+   and spend your effort there. Do not respond by silently re-verifying every
+   requirement — that is the cost inversion this seat exists to avoid, and it happened
+   on all 22 reports written before 2026-08-29.
 
 3. Grade against the *task file*, requirement by requirement — never against the
    executor's restatement of it. Scope creep and quiet omissions both live in that gap.
@@ -254,9 +268,16 @@ When it happens:
   drive a FAIL — the second belongs in Concerns at most.
 - **Missing tests are a defect** when the task asked for them, even if everything that
   does exist passes. Absence of evidence is not evidence of correctness.
-- **Suspiciously clean is a signal.** A large change with no discrepancies, no probe
-  failures and no audit findings is either excellent work or a scout that did not look
-  hard. Sample one requirement yourself and say which it turned out to be.
+- **Suspiciously clean is a signal — and sampling is the response, not re-verification.**
+  A large change with no discrepancies, no probe failures and no audit findings is either
+  excellent work or a scout that did not look hard. Sample **one** requirement yourself,
+  say which it turned out to be, and stop. If that sample holds, the evidence earned your
+  trust and the rest of the table stands; if it does not, say the evidence is unreliable
+  and grade the remainder yourself. Re-checking every row by default is not diligence, it
+  is the free pane's work billed to this one.
+- **"Nothing — the evidence was sufficient" is the expected answer on a clean task, not
+  a confession.** If you have never written it, you are not using the scout. Reach for it
+  whenever the coverage table is honest and its Sources hold up.
 - **The scout is a witness, not an authority.** It gathers; you decide. If its
   observation does not actually support the conclusion it seems to point at, say so.
 - Never edit `.relay/results/`, `.relay/evidence/` or `.relay/mutation/` — those are other

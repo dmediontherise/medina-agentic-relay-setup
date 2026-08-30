@@ -219,11 +219,37 @@ what lets it spend its effort only where your evidence is thin.
 ## Requirement coverage
 | Req # | What I observed | Source | Confidence |
 |---|---|---|---|
-| 1 | <one line of fact, not opinion> | <command / file:line / probe> | direct / partial / none |
+| 1 | <one line of fact, not opinion> | <command / probe / file:line> | direct / partial / none |
 
-`direct` = I ran or read something that settles it. `partial` = suggestive but
-incomplete, and here is what is missing. `none` = I could not establish this; the
-validator must check it itself.
+Source and Confidence are coupled. A `direct` row's Source must be a command you ran or
+a probe you wrote and ran. A `file:line` you read is a `partial` Source and cannot carry
+a `direct`.
+
+**`direct` means one thing only: I executed something whose output would have been
+different if this requirement were unmet.** A command with an exit code, a probe that
+asserts a value, a test you ran. Nothing else earns `direct`.
+
+`partial` = I established something suggestive but did not execute a check that could
+have failed. **Reading source and matching text is always `partial`, never `direct`** —
+including greps, regexes over source, and "I read the function and it looks right".
+Say in the same row what is missing to make it direct.
+
+`none` = I could not establish this at all; the validator must check it itself.
+
+The distinction is the whole value of this column, and it is easy to erode without
+noticing. On 2026-08-17 the evidence for task 021 marked all nine requirements `direct`
+when three of them rested on regexes over source text — `/popstate/.test(s)`, which a
+comment containing the word satisfies. The validator read `content.js` and
+`background.js` itself, found the requirement-2 row described code that does something
+else entirely, and failed the task. That is the paid pane doing your job because your
+column told it there was nothing left to do.
+
+Across the run to 2026-08-29 this column read `direct` 184 times, `partial` 0 times and
+`none` twice. **A column that never varies carries no information** and the validator
+cannot triage on it, so it re-verifies everything — which is the exact cost inversion
+this relay exists to prevent. `partial` is not an admission of weak work. It is the
+signal that tells the expensive pane where to spend, and a run with none of it means
+your evidence is not being used.
 
 ## Commands re-run
 | Command | Exit | Result line |
@@ -296,8 +322,17 @@ a test suite that did not exist to begin with, a command that could not be run.
 - **Never paraphrase a failure.** Passing output may be reduced to its result line;
   failing output is pasted verbatim (elided from the middle if long). The asymmetry is
   deliberate: green output carries almost no information, red output carries all of it.
-- **Say "none" out loud.** A requirement you could not establish must appear in the
-  table as `none`. Silence reads as coverage, and that is how bad work gets through.
+- **Say "none" and "partial" out loud.** A requirement you could not establish must
+  appear in the table as `none`. One you established only by reading rather than
+  executing must appear as `partial`, with the missing execution named. Silence reads as
+  coverage, and a uniform `direct` column reads as coverage of everything — which is how
+  bad work gets through and how the validator ends up re-running your whole job.
+- **Grading your own coverage is not optional generosity.** Before you write the
+  evidence file, walk the coverage table once and ask of every `direct` row: what did I
+  execute, and would its output have changed if this requirement were unmet? If you
+  cannot answer both, the row is `partial`. Expect real tasks to produce a mix; a table
+  that comes out all `direct` is a claim that every requirement was settled by execution,
+  and it is almost never true.
 - **Never cite an artifact you did not write.** Every file path in your evidence — probes
   especially — must be one the validator can open. A path that does not resolve is a
   fabricated citation whatever the intent behind it, and it costs more than omitting the
