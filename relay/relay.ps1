@@ -197,6 +197,14 @@ function Get-PaneText($target, $lines = 40) {
     return (psmux capture-pane -t $target -p 2>$null | Select-Object -Last $lines | Out-String)
 }
 
+# Same, but including scrollback. Kept separate from Get-PaneText on purpose: fault
+# detection reads the visible screen so that a fault banner from before a restart cannot
+# match and condemn a pane that has since recovered. Only the responsiveness probe wants
+# history, because it is looking for one nonce it just generated.
+function Get-PaneScrollback($target, $lines = 120) {
+    return (psmux capture-pane -t $target -p -S -200 2>$null | Select-Object -Last $lines | Out-String)
+}
+
 # Relay panes are tiled and therefore narrow, so any banner we match on may be
 # hard-wrapped mid-sentence or mid-word. Observed: "Agent execution terminated due
 # to error. Error ID: 601\n5d9e3-...". Matching only the raw capture means the
@@ -247,12 +255,37 @@ function Test-PaneBusy($target) {
 function Test-AgentResponsive($target, $timeoutSec = 75) {
     $nonce  = ([guid]::NewGuid().ToString('N').Substring(0, 6)).ToUpper()
     $expect = "RELAYOK$nonce"
-    Send-Line $target "Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+    # The probe must announce itself as relay machinery. A bare "reply with this token"
+    # is indistinguishable from an out-of-band instruction, and a review pane whose
+    # charter tells it to work only from files on the bus is right to refuse one.
+    # Observed 2026-08-30: the validator answered "out-of-band instruction with no file
+    # backing in .relay/. I'm not going to comply", promptly and correctly - so the pane
+    # was healthy and every probe of it reported failure. The charters carry the matching
+    # half of this contract; do not reword one side without the other.
+    Send-Line $target "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 3
-        $txt = Get-PaneText $target 60
-        if ($txt -match [regex]::Escape($expect)) { return $true }
+
+        # Read the SCROLLBACK, not the visible screen. Five tiled panes leave each one
+        # about six rows tall, and the Claude pane spends all six on its own footer -
+        # input box, transcript warning, model line, permissions line. The reply is
+        # already scrolled out of the visible region by the time we look, so the plain
+        # capture used everywhere else returns six rows that can never contain it.
+        # Verified 2026-08-30 on pane %13: visible capture 6 lines, -S -200 capture 52,
+        # with both probe echoes present only in the latter.
+        $txt = Get-PaneScrollback $target 120
+
+        # Match with everything but letters and digits removed. A pane this narrow wraps
+        # the reply mid-token and paints box-drawing characters through it - the observed
+        # echo read `14F826 as one word,-nothing-else.` with `RELAYOK` on the line above -
+        # so a literal match on `RELAYOK<nonce>` fails against a healthy agent that
+        # answered correctly. Normalising cannot produce a false positive from the prompt
+        # we just sent: that text reads `...RELAYOKimmediatelyfollowedby<nonce>...`, which
+        # does not contain `RELAYOK<nonce>`.
+        $flat = ($txt -replace '[^A-Za-z0-9]', '')
+        if ($flat.Contains($expect)) { return $true }
+
         $fault = Get-PaneFault $target
         if ($fault) { return $false }
     }
@@ -1025,7 +1058,20 @@ function Restart-Agents($s, $names, $deep) {
     $s | ConvertTo-Json -Depth 5 | Set-Content $StateFile -Encoding utf8
 
     Say "Waiting for restarted agents to boot..."
-    Start-Sleep -Seconds 5
+
+    # Wait for each pane's TUI to actually draw before probing it. This was a flat
+    # 5-second sleep, which is tuned for agy - it starts fast - and far too short for the
+    # Claude pane. A probe sent into a TUI that is not yet accepting input vanishes, and
+    # the pane then looks dead for a full 75s probe timeout, so `restart -Agent validator`
+    # reported failure on a pane that was in fact fine and came up seconds later. That was
+    # every validator restart, not an occasional race.
+    #
+    # Wait-PaneBooted is not a health verdict (see its own comment - 'bypass permissions
+    # on' paints the instant the TUI draws), and it is not used as one here. It is used
+    # for the one thing it is right for: knowing the pane can receive a keystroke. The
+    # probe below is still what decides whether the agent works.
+    foreach ($t in $targets) { Wait-PaneBooted $t 150 | Out-Null }
+    Start-Sleep -Seconds 3
     Clear-TrustPrompts $targets
 
     # Always PROBE after a restart, validator included - never accept the passive
@@ -1046,6 +1092,16 @@ function Restart-Agents($s, $names, $deep) {
     $bad = @()
     for ($i = 0; $i -lt $names.Count; $i++) {
         $n = $names[$i]; $t = $targets[$i]
+        if (Test-AgentResponsive $t) { Say "  $n : responding"; continue }
+
+        # A pane that faulted is genuinely broken - do not spend a second probe on it.
+        $fault = Get-PaneFault $t
+        if ($fault) { Say "  $n : $fault"; $bad += $n; continue }
+
+        # No answer and no fault is ambiguous: either the agent is wedged, or the first
+        # probe landed a moment before the TUI began accepting input and was swallowed.
+        # A second probe into a pane that has certainly drawn by now separates the two.
+        Say "  $n : no answer to the first probe - retrying once"
         if (Test-AgentResponsive $t) { Say "  $n : responding" } else { $bad += $n }
     }
     return $bad
@@ -1660,8 +1716,20 @@ if ($Command -eq 'autopilot') {
             $tasksBeforeSweep = @(Get-ChildItem (Join-Path $ws '.relay\tasks') -File -Filter *.md -EA 0 | ForEach-Object { $_.Name })
             $r = Wait-Artifact $s $sweepPath 1800 'validator' $log @('scout', 'executor')
             Write-RunLog $log "mutation sweep: $r"
-            foreach ($m in $outstanding) { $seen[$m.BaseName] = $true }
-            Save-Seen $seenFile $seen
+
+            # Mark the inputs reviewed ONLY if the sweep actually produced its summary.
+            # This used to run unconditionally, so a sweep that timed out or was stopped
+            # still recorded every report it had been handed as handled - and `seen` is
+            # persisted, so those findings were skipped by every future run. Silent, and
+            # permanent. Observed 2026-08-30: a sweep the validator declined timed out at
+            # 30m and buried three reports (025, 026, 031) on its way out.
+            if ($r -eq 'ok') {
+                foreach ($m in $outstanding) { $seen[$m.BaseName] = $true }
+                Save-Seen $seenFile $seen
+            }
+            else {
+                Write-RunLog $log "sweep did not complete ($r) - leaving $($outstanding.Count) report(s) unreviewed for the next run"
+            }
             $summary += "| mutation sweep | - | $r |"
 
             # The sweep dispatches its own follow-up tasks, and they land after the report.

@@ -254,7 +254,13 @@ agent_responsive() {
   local target="$1" timeout="${2:-75}" nonce expect deadline txt
   nonce="$(date +%s | tail -c 7)$$"; nonce="$(printf '%s' "$nonce" | tr -dc '0-9' | tail -c 6)"
   expect="RELAYOK$nonce"
-  send_line "$target" "Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+  # The probe must announce itself as relay machinery. A bare "reply with this token" is
+  # indistinguishable from an out-of-band instruction, and a review pane whose charter
+  # tells it to work only from files on the bus is right to refuse one. Observed
+  # 2026-08-30 on the PowerShell port: the validator answered "out-of-band instruction
+  # with no file backing in .relay/. I'm not going to comply" - correctly - so a healthy
+  # pane failed every probe. The charters carry the matching half; keep the two in step.
+  send_line "$target" "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
   deadline=$(( $(date +%s) + timeout ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     sleep 3
@@ -1310,7 +1316,18 @@ cmd_autopilot() {
 
       local sr; sr="$(wait_artifact "$sweep_path" 1800 validator "scout executor")"
       run_log "mutation sweep: $sr"
-      for m in $outstanding; do basename "$m" .md >> "$seen_file"; done
+
+      # Mark the inputs reviewed ONLY if the sweep actually produced its summary. This
+      # used to run unconditionally, so a sweep that timed out or was stopped still
+      # recorded every report it had been handed as handled - and the seen file is
+      # persisted, so those findings were skipped by every future run. Silent, and
+      # permanent. Observed 2026-08-30 on the PowerShell port: a declined sweep timed out
+      # at 30m and buried three reports, which turned out to hold three real test gaps.
+      if [ "$sr" = "ok" ]; then
+        for m in $outstanding; do basename "$m" .md >> "$seen_file"; done
+      else
+        run_log "sweep did not complete ($sr) - leaving those report(s) unreviewed for the next run"
+      fi
       summary="$summary
 | mutation sweep | - | $sr |"
 
