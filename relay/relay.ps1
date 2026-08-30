@@ -252,6 +252,37 @@ function Test-PaneBusy($target) {
 # it a second time inside a "not recognized" error - so any probe whose answer
 # appears verbatim in its own question can be passed by something that is not an
 # agent at all. Here the two halves are only ever adjacent in a real reply.
+# Where a probed agent drops its answer. Resolved from the state file rather than passed
+# in, so the six call sites of Test-AgentResponsive stay unchanged. Returns $null if the
+# relay is not up or the state file is unreadable, in which case the probe falls back to
+# reading the screen.
+function Get-ProbeDir {
+    if (-not (Test-Path $StateFile)) { return $null }
+    try {
+        $ws = (Get-Content $StateFile -Raw | ConvertFrom-Json).workspace
+        if (-not $ws -or -not (Test-Path $ws)) { return $null }
+        $d = Join-Path $ws '.relay\health'
+        New-Item -ItemType Directory -Force $d -EA 0 | Out-Null
+        return $d
+    }
+    catch { return $null }
+}
+
+# Liveness probe. The agent answers by writing a nonce to a file; the terminal reply is
+# kept only as a fallback.
+#
+# Reading the answer off the screen does not work for the Claude pane and cannot be made
+# to. Five tiled panes leave each one about six rows, and Claude Code spends all of them
+# on its own footer - input box, transcript warning, model line, permissions line - so a
+# one-word reply is repainted rather than scrolled and never enters the scrollback at all.
+# Verified 2026-08-30: the pane answered in one second, and 2000 lines of captured history
+# contained only the echo of the prompt. Every probe of a healthy validator failed, and
+# `restart -Agent validator` reported failure every time it was run.
+#
+# A file has none of those properties. It is also what the rest of this relay already does
+# for every other kind of coordination, which is the argument for it independent of the
+# bug. The screen check is retained because the agy panes have always passed it and there
+# is no reason to make them prove a new mechanism to stay healthy.
 function Test-AgentResponsive($target, $timeoutSec = 75) {
     $nonce  = ([guid]::NewGuid().ToString('N').Substring(0, 6)).ToUpper()
     $expect = "RELAYOK$nonce"
@@ -262,10 +293,37 @@ function Test-AgentResponsive($target, $timeoutSec = 75) {
     # backing in .relay/. I'm not going to comply", promptly and correctly - so the pane
     # was healthy and every probe of it reported failure. The charters carry the matching
     # half of this contract; do not reword one side without the other.
-    Send-Line $target "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+    $probeDir  = Get-ProbeDir
+    $probeFile = $null
+    if ($probeDir) { $probeFile = Join-Path $probeDir "$nonce.txt" }
+
+    if ($probeFile) {
+        # $expect is deliberately NOT interpolated into the prompt. The pane echoes what
+        # we type, and a pane that has dropped to a bare shell echoes it again inside a
+        # "command not found" - so a probe whose answer appears in its own question can be
+        # passed by something that is not an agent at all. Keep the two halves apart here;
+        # they are only ever adjacent in a real reply.
+        Send-Line $target "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Write the word RELAYOK immediately followed by $nonce, as one word with nothing else in the file, into $probeFile . Then reply with that same word here. Do nothing else."
+    }
+    else {
+        Send-Line $target "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+    }
+    # Always remove the drop file, on every exit path, so .relay/health does not fill up
+    # with the residue of past probes.
+    $cleanup = { if ($probeFile -and (Test-Path $probeFile)) { Remove-Item $probeFile -Force -EA 0 } }
+
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Seconds 3
+
+        # The file is the primary answer.
+        if ($probeFile -and (Test-Path $probeFile)) {
+            $body = (Get-Content $probeFile -Raw -EA 0)
+            if ($body -and (($body -replace '[^A-Za-z0-9]', '')).Contains($expect)) {
+                & $cleanup
+                return $true
+            }
+        }
 
         # Read the SCROLLBACK, not the visible screen. Five tiled panes leave each one
         # about six rows tall, and the Claude pane spends all six on its own footer -
@@ -284,11 +342,12 @@ function Test-AgentResponsive($target, $timeoutSec = 75) {
         # we just sent: that text reads `...RELAYOKimmediatelyfollowedby<nonce>...`, which
         # does not contain `RELAYOK<nonce>`.
         $flat = ($txt -replace '[^A-Za-z0-9]', '')
-        if ($flat.Contains($expect)) { return $true }
+        if ($flat.Contains($expect)) { & $cleanup; return $true }
 
         $fault = Get-PaneFault $target
-        if ($fault) { return $false }
+        if ($fault) { & $cleanup; return $false }
     }
+    & $cleanup
     return $false
 }
 

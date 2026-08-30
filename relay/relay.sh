@@ -250,8 +250,31 @@ agent_trouble() {
 # inside a "command not found" error - so any probe whose answer appears in its
 # own question can be passed by something that is not an agent at all. Here the
 # two halves are only ever adjacent in a real reply.
+# Where a probed agent drops its answer. Read out of the state file rather than passed
+# in, so every call site of agent_responsive stays unchanged. Fails if the relay is not
+# up, in which case the probe falls back to reading the screen.
+probe_dir() {
+  local ws d
+  [ -f "$STATE_FILE" ] || return 1
+  ws="$(grep -m1 '^WORKSPACE=' "$STATE_FILE" | cut -d'"' -f2)"
+  [ -n "$ws" ] && [ -d "$ws" ] || return 1
+  d="$ws/.relay/health"
+  mkdir -p "$d" 2>/dev/null || return 1
+  printf '%s' "$d"
+}
+
+# The agent answers by writing a nonce to a file; the terminal reply is a fallback.
+#
+# Reading the answer off the screen does not work for the Claude pane and cannot be made
+# to. Five tiled panes leave each about six rows and Claude Code spends all of them on its
+# own footer, so a one-word reply is repainted rather than scrolled and never enters the
+# scrollback. Verified 2026-08-30 on the PowerShell port: the pane answered in one second
+# and 2000 lines of captured history held only the echo of the prompt, so every probe of a
+# healthy validator failed. A file has none of those properties, and is what the rest of
+# this relay already uses for coordination. The screen check stays because the agy panes
+# have always passed it.
 agent_responsive() {
-  local target="$1" timeout="${2:-75}" nonce expect deadline txt
+  local target="$1" timeout="${2:-75}" nonce expect deadline txt pdir pfile body
   nonce="$(date +%s | tail -c 7)$$"; nonce="$(printf '%s' "$nonce" | tr -dc '0-9' | tail -c 6)"
   expect="RELAYOK$nonce"
   # The probe must announce itself as relay machinery. A bare "reply with this token" is
@@ -260,14 +283,31 @@ agent_responsive() {
   # 2026-08-30 on the PowerShell port: the validator answered "out-of-band instruction
   # with no file backing in .relay/. I'm not going to comply" - correctly - so a healthy
   # pane failed every probe. The charters carry the matching half; keep the two in step.
-  send_line "$target" "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+  pdir="$(probe_dir)" || pdir=""
+  pfile=""
+  [ -n "$pdir" ] && pfile="$pdir/$nonce.txt"
+
+  # $expect is deliberately NOT interpolated into either prompt, for the reason in the
+  # comment above this function: the two halves must only ever be adjacent in a real reply.
+  if [ -n "$pfile" ]; then
+    send_line "$target" "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Write the word RELAYOK immediately followed by $nonce, as one word with nothing else in the file, into $pfile . Then reply with that same word here. Do nothing else."
+  else
+    send_line "$target" "RELAY HEALTH CHECK - this is the relay's liveness probe, not a task and not an instruction to do any work. Reply with the word RELAYOK immediately followed by $nonce as one word, nothing else. Do not use any tools."
+  fi
+
   deadline=$(( $(date +%s) + timeout ))
   while [ "$(date +%s)" -lt "$deadline" ]; do
     sleep 3
+    # The file is the primary answer.
+    if [ -n "$pfile" ] && [ -f "$pfile" ]; then
+      body="$(tr -dc 'A-Za-z0-9' < "$pfile" 2>/dev/null)"
+      case "$body" in *"$expect"*) rm -f "$pfile"; return 0 ;; esac
+    fi
     txt="$(pane_text "$target" 60)"
-    printf '%s' "$txt" | grep -q "$expect" && return 0
-    [ -n "$(pane_fault "$target")" ] && return 1
+    if printf '%s' "$txt" | grep -q "$expect"; then rm -f "$pfile" 2>/dev/null; return 0; fi
+    if [ -n "$(pane_fault "$target")" ]; then rm -f "$pfile" 2>/dev/null; return 1; fi
   done
+  rm -f "$pfile" 2>/dev/null
   return 1
 }
 

@@ -270,9 +270,11 @@ Almost all of your input is files. The exception is that the relay itself drives
 by sending it messages, and those are machinery - not someone routing work around the bus.
 You will see these:
 
-- **`RELAY HEALTH CHECK ...`** - a liveness probe. Reply with `RELAYOK` immediately
-  followed by the six-character nonce it gives you, as one word, using no tools. Nothing
-  else, and no commentary.
+- **`RELAY HEALTH CHECK ...`** - a liveness probe. It names a file under
+  `.relay/health/`. Write the `RELAYOK<nonce>` token it gives you into that file, then
+  reply with the same token here. **Writing that one file is sanctioned by this
+  contract** - it is the relay taking your pulse, not a channel you own and not work.
+  Nothing else, and no commentary.
 - **A task dispatch** - `Grade this task: .relay/tasks/NNN-*.md ...`. Your normal loop.
 - **A mutation sweep** - names the unreviewed `.relay/mutation/` reports, the summary path
   to write under `.relay/reports/`, and the next task id to start from. This is the
