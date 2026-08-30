@@ -518,9 +518,13 @@ cmd_up() {
   mkdir -p "$RELAY_HOME"
   make_bus_dirs "$workspace"
 
-  for c in $ALL_AGENTS; do
+  # house-style ships alongside the role charters. It is the standing law on form for
+  # every pane: the validator takes it as an appended system prompt, the agy panes read it
+  # at boot ahead of their charter.
+  for c in $ALL_AGENTS house-style; do
     [ -f "$RELAY_HOME/charters/$c.md" ] && cp -f "$RELAY_HOME/charters/$c.md" "$workspace/.relay/$c.md"
   done
+  local style_file="$workspace/.relay/house-style.md"
 
   local agy_exe claude_exe
   agy_exe="$(command -v agy || true)"
@@ -562,10 +566,10 @@ cmd_up() {
   }
 
   local exec_boot val_boot scout_boot mut_boot
-  exec_boot="Read .relay/executor.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for task files."
+  exec_boot="Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files."
   val_boot="Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
-  scout_boot="Read .relay/scout.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
-  mut_boot="Read .relay/mutator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
+  scout_boot="Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
+  mut_boot="Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
 
   # The mutator exists as its own pane for one reason: mutation testing is slow
   # (minutes to tens of minutes) and the relay cannot hold the validator behind
@@ -576,7 +580,13 @@ cmd_up() {
   # executor edits the real tree for task 008.
   local l_exec l_val l_scout l_mut l_bus
   l_exec="$(write_launcher executor  "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$exec_boot")")"
-  l_val="$(write_launcher  validator "$(printf 'exec %q --model sonnet --permission-mode %s %q' "$claude_exe" "$claude_mode" "$val_boot")")"
+  # house-style goes in the SYSTEM prompt, not the boot message. A charter read as the
+  # reply to a first user turn is a fact in a transcript: it competes with Claude Code's
+  # own stock system prompt and decays as the conversation grows. An appended system
+  # prompt is prepended to every turn instead, so the rules on form bind as hard on turn
+  # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and long;
+  # this file is the law, and short.
+  l_val="$(write_launcher  validator "$(printf 'exec %q --model sonnet --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
   l_scout="$(write_launcher scout    "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$scout_boot")")"
   l_mut="$(write_launcher  mutator   "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"

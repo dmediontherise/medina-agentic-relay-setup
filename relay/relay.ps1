@@ -649,10 +649,14 @@ if ($Command -eq 'up') {
 
     # Charters describe each agent's contract with the bus.
     $charterDir = Join-Path $RelayHome 'charters'
-    foreach ($c in $script:AllAgents) {
+    # house-style is shipped alongside the role charters. It is the standing law on form
+    # for every pane: the validator takes it as an appended system prompt, the agy panes
+    # read it at boot ahead of their charter.
+    foreach ($c in ($script:AllAgents + @('house-style'))) {
         $src = Join-Path $charterDir "$c.md"
         if (Test-Path $src) { Copy-Item $src (Join-Path $Workspace ".relay\$c.md") -Force }
     }
+    $styleFile = Join-Path $Workspace '.relay\house-style.md'
 
     # Preflight: the executor runs Antigravity CLI (agy). Gemini CLI's "Sign in with
     # Google" was retired for individual accounts on 2026-06-18, so agy - which uses
@@ -720,7 +724,7 @@ if ($Command -eq 'up') {
     # --add-dir pins the workspace explicitly and makes the tools run there. psmux's
     # -c is not sufficient - it sets the pane's cwd correctly, and agy ignores it.
     $agyRoot = "--add-dir `"$Workspace`""
-    $agyBoot = "Read .relay/executor.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for task files."
+    $agyBoot = "Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files."
     $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$agyBoot`"`r`n"
 
     # acceptEdits permits file edits but still gates every new Bash command shape behind
@@ -753,7 +757,13 @@ if ($Command -eq 'up') {
     # start slipping, that is the signal to put Opus back here - not raw verdict accuracy,
     # which looks fine right up until the loop stops terminating.
     $valBoot = "Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
-    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model sonnet --permission-mode $claudeMode `"$valBoot`"`r`n"
+    # house-style goes in the SYSTEM prompt, not the boot message. A charter read as the
+    # reply to a first user turn is a fact in a transcript: it competes with Claude Code's
+    # own stock system prompt and decays as the conversation grows. An appended system
+    # prompt is prepended to every turn instead, so the rules on form bind as hard on turn
+    # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and it is
+    # long; this file is the law, and it is short.
+    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model sonnet --permission-mode $claudeMode --append-system-prompt-file `"$styleFile`" `"$valBoot`"`r`n"
 
     # Scout: agy on the same Gemini tier as the executor (user's call, 2026-08-09; there
     # is no 3.6 Pro tier - see 'agy models'). Independence comes from role separation,
@@ -761,7 +771,7 @@ if ($Command -eq 'up') {
     # the code and sees only the diff and the result file. Same launch posture this pane
     # already ran under, carried over unchanged via $agyFlags. Its charter keeps it out of
     # the source tree, and .relay/probe/ gives it a sanctioned place to write instead.
-    $scoutBoot = "Read .relay/scout.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
+    $scoutBoot = "Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
     $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$scoutBoot`"`r`n"
 
     # Mutator: the secondary scout, agy again, dedicated to mutation testing.
@@ -773,7 +783,7 @@ if ($Command -eq 'up') {
     # free agy pane buys us out of. It runs against a frozen snapshot of the workspace
     # in .relay/mutants/<task>/, so it can still be grinding on task 007 while the
     # executor is already editing the real tree for task 008.
-    $mutBoot = "Read .relay/mutator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
+    $mutBoot = "Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
     $mutLauncher = Write-Launcher 'mutator' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$mutBoot`"`r`n"
 
     # Bus pane: live view of artifacts landing on the file bus.
