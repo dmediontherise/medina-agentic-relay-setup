@@ -34,11 +34,19 @@ param(
     [string]$Agent,
     [string]$Text,
     [string]$Task,
+    # 'dispatch -Phase prebrief' sends the scout its spec-first pre-brief instead of
+    # the evidence pass. Autopilot does this on its own; this is for driving by hand.
+    [ValidateSet('', 'prebrief')]
+    [string]$Phase = '',
     [string]$File,
     [int]$Lines = 60,
     [int]$TimeoutSec = 900,
     [string]$Session = 'relay',
     [switch]$Safe,
+
+    # Model for the three agy panes on this run. Empty means: fall back to the
+    # RELAY_AGY_MODEL environment variable, then to the built-in default in 'up'.
+    [string]$Model,
 
     # 'health' probes the agy panes by default because they are free. -Deep adds
     # the same probe to the validator, which costs Claude quota - worth it when
@@ -52,7 +60,12 @@ param(
     [int]$MaxCycles = 24,           # hard cap on task cycles in one run
     [int]$MaxConsecutiveFails = 3,  # stop rather than grind on work that is not converging
     [int]$MutationDrainMin = 20,    # how long to wait for late mutation reports at the end
-    [switch]$NoMutation             # skip the mutation lane entirely
+    [switch]$NoMutation,            # skip the mutation lane entirely
+    [switch]$NoPrebrief,            # skip the scout's spec-first pre-brief pass
+
+    # Start the next task on the executor while the validator grades this one. Skipped
+    # whenever the two tasks' Scope 'In:' paths overlap, or either does not state one.
+    [switch]$Pipeline
 )
 
 $ErrorActionPreference = 'Stop'
@@ -706,11 +719,30 @@ if ($Command -eq 'up') {
         return $path
     }
 
-    # Executor: Antigravity CLI on Gemini 3.7 Flash (High) - fast, high volume.
-    # Moved 3.6 -> 3.7 on 2026-08-29. Still the top reasoning tier of the flash line
-    # ('agy models' lists high/medium/low only - there is no 3.7 Pro), so the launch
-    # posture and every charter assumption carry over unchanged.
-    $agyModel = 'gemini-3.7-flash-high'
+    # Model for the three agy panes. Antigravity ships a new Gemini tier every few weeks,
+    # so this is a variable with a default rather than three literals: the only edit an
+    # upgrade should ever need is the string below.
+    #
+    #   -Model <id>                                this run, all agy panes
+    #   RELAY_AGY_MODEL=<id>                       persistent default, all agy panes
+    #   RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}   per role, wins over both
+    #
+    # Moved 3.6 -> 3.7 on 2026-08-29, 3.7 -> 3.8 on 2026-09-06. Still the top reasoning
+    # tier of the flash line ('agy models' lists high/medium/low only - there is no 3.8
+    # Pro), so the launch posture and every charter assumption carry over unchanged.
+    #
+    # Per-role overrides exist because the three seats do not want the same thing: the
+    # mutator is never on the critical path and its loop is mechanical (edit a line,
+    # re-run the suite, record what went red), so RELAY_AGY_MODEL_MUTATOR set to
+    # gemini-3.8-flash-medium buys more mutants inside its 25-minute budget at no cost
+    # to the verdict. The executor and the scout both do reasoning the verdict depends
+    # on - leave those on the high tier.
+    $agyModel = $Model
+    if (-not $agyModel) { $agyModel = $env:RELAY_AGY_MODEL }
+    if (-not $agyModel) { $agyModel = 'gemini-3.8-flash-high' }
+    $agyModelExec  = if ($env:RELAY_AGY_MODEL_EXECUTOR) { $env:RELAY_AGY_MODEL_EXECUTOR } else { $agyModel }
+    $agyModelScout = if ($env:RELAY_AGY_MODEL_SCOUT)    { $env:RELAY_AGY_MODEL_SCOUT }    else { $agyModel }
+    $agyModelMut   = if ($env:RELAY_AGY_MODEL_MUTATOR)  { $env:RELAY_AGY_MODEL_MUTATOR }  else { $agyModel }
     $agyFlags = '--dangerously-skip-permissions'
     if ($Safe) { $agyFlags = '--mode accept-edits' }
 
@@ -725,7 +757,7 @@ if ($Command -eq 'up') {
     # -c is not sufficient - it sets the pane's cwd correctly, and agy ignores it.
     $agyRoot = "--add-dir `"$Workspace`""
     $agyBoot = "Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files."
-    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$agyBoot`"`r`n"
+    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModelExec $agyFlags -i `"$agyBoot`"`r`n"
 
     # acceptEdits permits file edits but still gates every new Bash command shape behind
     # an approval prompt - which strands a review pane, whose entire job is running
@@ -772,7 +804,7 @@ if ($Command -eq 'up') {
     # already ran under, carried over unchanged via $agyFlags. Its charter keeps it out of
     # the source tree, and .relay/probe/ gives it a sanctioned place to write instead.
     $scoutBoot = "Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
-    $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$scoutBoot`"`r`n"
+    $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" $agyRoot --model $agyModelScout $agyFlags -i `"$scoutBoot`"`r`n"
 
     # Mutator: the secondary scout, agy again, dedicated to mutation testing.
     #
@@ -784,7 +816,7 @@ if ($Command -eq 'up') {
     # in .relay/mutants/<task>/, so it can still be grinding on task 007 while the
     # executor is already editing the real tree for task 008.
     $mutBoot = "Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
-    $mutLauncher = Write-Launcher 'mutator' "& `"$agyExe`" $agyRoot --model $agyModel $agyFlags -i `"$mutBoot`"`r`n"
+    $mutLauncher = Write-Launcher 'mutator' "& `"$agyExe`" $agyRoot --model $agyModelMut $agyFlags -i `"$mutBoot`"`r`n"
 
     # Bus pane: live view of artifacts landing on the file bus.
     $watchBody = @(
@@ -903,11 +935,11 @@ if ($Command -eq 'up') {
     }
 
     Say "Relay up - all four agents answered."
-    Say "  executor  (agy / $agyModel) -> $($ids['0'])"
-    Say "  validator (claude sonnet)                -> $($ids['1'])"
-    Say "  scout     (agy / $agyModel) -> $($ids['2'])"
-    Say "  mutator   (agy / $agyModel) -> $($ids['3'])"
-    Say "  bus watch                                -> $($ids['4'])"
+    Say "  executor  : agy / $agyModelExec  -> $($ids['0'])"
+    Say "  validator : claude sonnet -> $($ids['1'])"
+    Say "  scout     : agy / $agyModelScout  -> $($ids['2'])"
+    Say "  mutator   : agy / $agyModelMut  -> $($ids['3'])"
+    Say "  bus watch : -> $($ids['4'])"
     Say "Attach with: psmux attach -t $Session"
     if ($script:ScaffoldedNew) {
         Write-Host ""
@@ -1206,9 +1238,12 @@ if ($Command -eq 'send') {
 # ======================================================== DISPATCH ===========
 # Hand a task file to an agent. The task file IS the interface - keeps quoting
 # sane and gives the agent a durable spec it can re-read.
-function Get-DispatchMessage($agentName, $rel, $taskBase) {
+function Get-DispatchMessage($agentName, $rel, $taskBase, $phase = '') {
+    if ($phase -eq 'prebrief') {
+        return "PRE-BRIEF for: $rel . The executor is still working - there is no code to look at yet and that is the point. Follow the pre-brief section of your contract in .relay/scout.md: read ONLY the task file, do not read the diff, the source, the tests or any result file, and do not run the verification commands. From the requirements alone, write your probe files into .relay/probe/$taskBase/ and the expectation table into .relay/probe/$taskBase/PREBRIEF.md , quoting for each requirement the clause its expected value comes from. Do NOT run the probes and do NOT write an evidence file. Say SCOUT PREBRIEF DONE $taskBase when the table is written."
+    }
     if ($agentName -eq 'scout') {
-        return "Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Do NOT do mutation testing; the mutator pane owns that. Observations only, no verdict."
+        return "Gather evidence for: $rel . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Run the pre-brief probes already in .relay/probe/$taskBase/ first and unmodified, and mark each row of your Probes run table pre or post. Do NOT do mutation testing; the mutator pane owns that. Observations only, no verdict."
     }
     if ($agentName -eq 'mutator') {
         return "Mutation pass for: $rel . Follow your contract in .relay/mutator.md . Your isolated snapshot of the workspace is at .relay/mutants/$taskBase/ - do all mutation work in there and never in the live tree. Write findings to .relay/mutation/$taskBase.md . Surviving mutants only, no verdict."
@@ -1221,7 +1256,7 @@ function Get-DispatchMessage($agentName, $rel, $taskBase) {
 
 # Returns 'ok' or a fault string. Callers decide what a fault means: the CLI exits 3
 # so a human notices, autopilot restarts the pane and retries once.
-function Invoke-Dispatch($s, $agentName, $taskPath, $note = '') {
+function Invoke-Dispatch($s, $agentName, $taskPath, $note = '', $phase = '') {
     $rel = (Resolve-Path $taskPath).Path.Replace($s.workspace, '').TrimStart('\', '/')
     $taskBase = [System.IO.Path]::GetFileNameWithoutExtension($taskPath)
 
@@ -1234,10 +1269,10 @@ function Invoke-Dispatch($s, $agentName, $taskPath, $note = '') {
     $fault = Get-PaneFault $target
     if ($fault) { return $fault }
 
-    $msg = Get-DispatchMessage $agentName $rel $taskBase
+    $msg = Get-DispatchMessage $agentName $rel $taskBase $phase
     if ($note) { $msg = "$msg $note" }
     Send-Line $target $msg
-    Say "Dispatched $rel -> $agentName"
+    if ($phase) { Say "Dispatched $rel -> $agentName ($phase)" } else { Say "Dispatched $rel -> $agentName" }
     return 'ok'
 }
 
@@ -1249,7 +1284,7 @@ if ($Command -eq 'dispatch') {
     $agentName = $Agent
     if (-not $agentName) { $agentName = 'executor' }
 
-    $r = Invoke-Dispatch $s $agentName $taskPath
+    $r = Invoke-Dispatch $s $agentName $taskPath '' $Phase
     if ($r -ne 'ok') {
         Write-Host "[relay] REFUSING TO DISPATCH - $agentName has faulted: $r" -ForegroundColor Red
         Write-Host "        Recover with: relay.ps1 restart -Agent $agentName" -ForegroundColor Yellow
@@ -1521,6 +1556,32 @@ function Get-PendingTasks($state) {
 #
 # So never conclude "no follow-up was written" from a scan taken the moment a report
 # appears. Give the writer a settle window and re-scan.
+# The validator names its follow-up on a NEXT-TASK: line in the report header, which is
+# both faster and less ambiguous than watching the tasks directory: a scan cannot tell
+# the validator's follow-up apart from a task a human dropped in mid-run, and it spends
+# its full settle window on every FAIL that legitimately has no follow-up.
+# Returns the relative path, or $null if there is no usable line.
+function Get-NextTaskFromReport($state, $reportPath, $logPath) {
+    if (-not (Test-Path $reportPath)) { return $null }
+    # Matched in this scope on purpose: $Matches set inside a Where-Object scriptblock
+    # does not reliably survive back out of it.
+    $rel = $null
+    foreach ($ln in @(Get-Content $reportPath -TotalCount 8 -EA SilentlyContinue)) {
+        if ($ln -match '^\s*NEXT-TASK:\s*(.+?)\s*$') { $rel = $Matches[1].Trim(); break }
+    }
+    if (-not $rel) { return $null }
+    if (@('none', '-', 'n/a') -contains $rel.ToLower()) { return $null }
+    # The charter has it write the task before the report, so the file should already be
+    # there; allow a few seconds anyway rather than falling back over a flush lag.
+    for ($i = 0; $i -lt 4; $i++) {
+        if (Test-Path (Resolve-BusPath $state $rel)) { return $rel }
+        Start-Sleep -Seconds 2
+    }
+    Write-RunLog $logPath "report names NEXT-TASK: $rel but no such file exists - falling back to a directory scan"
+    return $null
+}
+
+# Fallback for a report with no NEXT-TASK: line.
 function Wait-ForNewTasks($state, $before, $timeoutSec = 45) {
     $tasksDir = Join-Path $state.workspace '.relay\tasks'
     $deadline = (Get-Date).AddSeconds($timeoutSec)
@@ -1534,6 +1595,73 @@ function Wait-ForNewTasks($state, $before, $timeoutSec = 45) {
         Start-Sleep -Seconds 5
     }
     return @()
+}
+
+# --- pipelining --------------------------------------------------------------
+#
+# The executor and the validator never want the same thing at the same time: by the
+# time the validator is grading task N, the executor has been idle since N's result
+# landed and stays idle for the whole grade. Starting it on N+1 there costs nothing and
+# takes a whole executor phase - the longest one in the cycle - off the wall clock for
+# every task after the first.
+#
+# It is opt-in because it trades a real guarantee away. Serially, exactly one task's
+# changes are in the tree at any moment; pipelined, the validator may be grading N while
+# N+1's edits land around it. The scope guard below is what keeps that tolerable, and
+# the validator is told about it in its dispatch note.
+
+# The paths named on the "In:" line(s) of a task's Scope section. An empty result means
+# "could not tell", which the caller must treat as "do not pipeline" - an unparseable
+# scope is the case where overlap is most likely, not least.
+function Get-TaskScopeIn($taskPath) {
+    if (-not (Test-Path $taskPath)) { return @() }
+    $inScope = $false
+    $out = @()
+    foreach ($ln in @(Get-Content $taskPath -EA SilentlyContinue)) {
+        if ($ln -match '^##\s') { $inScope = [bool]($ln -match '^##\s*Scope'); continue }
+        if ($inScope -and $ln -match '^\s*[-*]\s*[Ii]n:\s*(.*)$') {
+            $body = $Matches[1] -replace '[`"'']', '' -replace '[,;]+', ' '
+            foreach ($t in @($body -split '\s+')) {
+                $v = ($t -replace '\\', '/' -replace '^\./', '').TrimEnd('/').Trim()
+                if ($v) { $out += $v }
+            }
+        }
+    }
+    return @($out | Sort-Object -Unique)
+}
+
+# Conservative: any shared path, or either path containing the other as a directory
+# prefix, counts as an overlap. So does a wildcard, and so does an unparseable scope on
+# either side.
+function Test-ScopesIntersect($taskA, $taskB) {
+    $pa = @(Get-TaskScopeIn $taskA)
+    $pb = @(Get-TaskScopeIn $taskB)
+    if ($pa.Count -eq 0 -or $pb.Count -eq 0) { return $true }
+    foreach ($x in $pa) {
+        if ($x -eq '.' -or $x -eq '..' -or $x.Contains('*')) { return $true }
+        foreach ($y in $pb) {
+            if ($y -eq '.' -or $y -eq '..' -or $y.Contains('*')) { return $true }
+            if ($x -eq $y) { return $true }
+            if ($x.StartsWith("$y/")) { return $true }
+            if ($y.StartsWith("$x/")) { return $true }
+        }
+    }
+    return $false
+}
+
+# A phase whose dispatch already went out - the pipelined executor. Waits for the
+# artifact without dispatching again, because a second dispatch into a pane that is
+# mid-turn is swallowed and the wait then times out against an agent doing the work
+# correctly. Anything other than a clean landing falls back to a fresh Invoke-Phase,
+# which re-dispatches, so a prefetch that went wrong costs a retry rather than the task.
+function Wait-Phase($state, $agentName, $taskPath, $artifactPath, $timeoutSec, $logPath, $idleAgents) {
+    $stallMin = 10
+    if ($agentName -eq 'validator') { $stallMin = 0 }
+    $r = Wait-Artifact $state $artifactPath $timeoutSec $agentName $logPath $idleAgents $stallMin
+    if ($r -eq 'ok')      { return 'ok' }
+    if ($r -eq 'stopped') { return 'stopped' }
+    Write-RunLog $logPath "prefetched $agentName did not land ($r) - falling back to a fresh dispatch"
+    return (Invoke-Phase $state $agentName $taskPath $artifactPath $timeoutSec $logPath $idleAgents)
 }
 
 function Get-Verdict($reportPath) {
@@ -1599,12 +1727,51 @@ function Assert-AgentReady($state, $agentName, $logPath) {
     return $true
 }
 
+# The newest write anywhere an agent could plausibly have made one. This is the only
+# honest answer to "is it still working?" - see the stall check in Wait-Artifact.
+#
+# Excluded on purpose:
+#   .git           index/lock churn happens without an agent doing anything
+#   .relay\logs    autopilot writes its OWN log here, so including it would make every
+#                  stall look like progress - the bug this whole check exists to catch
+#   .relay\health  keepalive nonce files, written by the panes that are NOT working
+#   .relay\mutants the mutation lane runs in parallel; its writes say nothing about the
+#                  agent actually being waited on
+# Heavy vendor trees are skipped for speed, not correctness.
+function Get-ProgressStamp($state) {
+    $ws = $state.workspace
+    if (-not $ws -or -not (Test-Path $ws)) { return $null }
+    $skip = @(
+        (Join-Path $ws '.git'),
+        (Join-Path $ws '.relay\logs'),
+        (Join-Path $ws '.relay\health'),
+        (Join-Path $ws '.relay\mutants'),
+        (Join-Path $ws 'node_modules'),
+        (Join-Path $ws '.venv'),
+        (Join-Path $ws 'venv')
+    )
+    $newest = $null
+    foreach ($f in (Get-ChildItem $ws -Recurse -File -Force -EA SilentlyContinue)) {
+        $dir = $f.DirectoryName
+        $skipIt = $false
+        foreach ($sk in $skip) {
+            if ($dir.StartsWith($sk, [System.StringComparison]::OrdinalIgnoreCase)) { $skipIt = $true; break }
+        }
+        if ($skipIt) { continue }
+        if ($null -eq $newest -or $f.LastWriteTimeUtc -gt $newest) { $newest = $f.LastWriteTimeUtc }
+    }
+    return $newest
+}
+
 # Block until an artifact lands, watching the working agent for faults and keeping the
-# other agy panes warm. Returns 'ok', 'stopped', 'timeout', or "fault:<reason>".
-function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAgents) {
-    $deadline   = (Get-Date).AddSeconds($timeoutSec)
-    $lastTouch  = Get-Date
-    $lastHealth = Get-Date
+# other agy panes warm. Returns 'ok', 'stopped', 'timeout', 'stalled', or "fault:<reason>".
+function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAgents, $stallMin = 10) {
+    $deadline     = (Get-Date).AddSeconds($timeoutSec)
+    $lastTouch    = Get-Date
+    $lastHealth   = Get-Date
+    $lastProbe    = Get-Date
+    $lastProgress = Get-Date
+    $progressMark = Get-ProgressStamp $state
     while ((Get-Date) -lt $deadline) {
         if (Test-Path $path) { Start-Sleep -Milliseconds 900; return 'ok' }
 
@@ -1631,6 +1798,25 @@ function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAg
             if ($trouble) { return "fault:$trouble" }
         }
 
+        # Busy is not progress. A wedged agy pane keeps drawing its spinner, so
+        # Test-PaneBusy answers "yes, working" while nothing at all is being written.
+        # Observed 2026-08-30: an executor sat busy from 15:39 to 18:00, wrote zero
+        # files, and the timeout branch below cheerfully DOUBLED its own wait on the
+        # strength of that spinner. Two stalls that day cost 4h15m and produced nothing.
+        # So ask the filesystem, not the screen.
+        if ($stallMin -gt 0 -and ((Get-Date) - $lastProbe).TotalSeconds -ge 60) {
+            $lastProbe = Get-Date
+            $mark = Get-ProgressStamp $state
+            if ($mark -ne $progressMark) {
+                $progressMark = $mark
+                $lastProgress = Get-Date
+            }
+            elseif (((Get-Date) - $lastProgress).TotalMinutes -ge $stallMin) {
+                Write-RunLog $logPath "$agentName has written nothing for ${stallMin}m - stalled, not slow"
+                return 'stalled'
+            }
+        }
+
         if (((Get-Date) - $lastTouch).TotalMinutes -ge 12) {
             $lastTouch = Get-Date
             foreach ($ia in $idleAgents) { Invoke-Keepalive $state $ia $logPath }
@@ -1642,6 +1828,16 @@ function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAg
 
 # One dispatch-and-wait phase, with the retry that used to require a human noticing.
 function Invoke-Phase($state, $agentName, $taskPath, $artifactPath, $timeoutSec, $logPath, $idleAgents, $note = '') {
+    # Filesystem progress is a valid liveness signal only for a seat that writes as it
+    # works. The agy panes do - source edits, probe files, snapshots - so ten minutes of
+    # nothing means wedged. The validator does not: its contract is judgment, it is told
+    # explicitly not to redo the scout's shell work, and its whole output is one file
+    # written at the end. Twelve quiet minutes there is a pane reading, and restarting it
+    # would burn the only quota this relay spends and start the grade over from zero.
+    # That seat stays covered by the fault check and the timeout.
+    $stallMin = 10
+    if ($agentName -eq 'validator') { $stallMin = 0 }
+
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         if (-not (Assert-AgentReady $state $agentName $logPath)) { return 'agent-down' }
 
@@ -1652,21 +1848,42 @@ function Invoke-Phase($state, $agentName, $taskPath, $artifactPath, $timeoutSec,
             continue
         }
 
-        $r = Wait-Artifact $state $artifactPath $timeoutSec $agentName $logPath $idleAgents
+        $r = Wait-Artifact $state $artifactPath $timeoutSec $agentName $logPath $idleAgents $stallMin
         if ($r -eq 'ok')      { return 'ok' }
         if ($r -eq 'stopped') { return 'stopped' }
 
         Write-RunLog $logPath "$agentName attempt ${attempt}: $r"
 
+        # A stalled pane is wedged, not thinking. It will still answer a probe and still
+        # look busy, so Assert-AgentReady below will not touch it - restart it here or
+        # attempt 2 just re-dispatches into the same wedge and burns the timeout again.
+        if ($r -eq 'stalled') {
+            $left = $script:RestartBudget[$agentName]
+            if ($left -le 0) {
+                Write-RunLog $logPath "$agentName stalled and its restart budget is spent - giving up on that lane"
+                return 'agent-down'
+            }
+            $script:RestartBudget[$agentName] = $left - 1
+            Write-RunLog $logPath "restarting stalled $agentName ($left restart(s) were left)"
+            $bad = Restart-Agents $state @($agentName) $false
+            if ($bad -and $bad.Count -gt 0) {
+                Write-RunLog $logPath "$agentName did not come back cleanly after a stall"
+                return 'agent-down'
+            }
+            continue
+        }
+
         # A timeout on an agent that is visibly still working is not a failure, it is a
         # bad guess at how long the work takes. Extend once rather than restarting the
-        # pane and throwing away everything it has done so far.
+        # pane and throwing away everything it has done so far. The stall check above is
+        # what makes this safe: reaching here means files were still being written.
         if ($r -eq 'timeout' -and (Test-PaneBusy (Get-PaneTarget $state $agentName))) {
             Write-RunLog $logPath "$agentName is still working - extending the wait once"
-            $r2 = Wait-Artifact $state $artifactPath $timeoutSec $agentName $logPath $idleAgents
+            $r2 = Wait-Artifact $state $artifactPath $timeoutSec $agentName $logPath $idleAgents $stallMin
             if ($r2 -eq 'ok')      { return 'ok' }
             if ($r2 -eq 'stopped') { return 'stopped' }
             Write-RunLog $logPath "$agentName after extension: $r2"
+            if ($r2 -eq 'stalled') { continue }
         }
 
         if (-not (Assert-AgentReady $state $agentName $logPath)) { return 'agent-down' }
@@ -1711,6 +1928,21 @@ if ($Command -eq 'autopilot') {
 
     $script:RestartBudget = @{ executor = 4; scout = 4; mutator = 3; validator = 2 }
     $script:OrphanedWork  = @()
+
+    # The scout pane is idle for the whole executor phase - the longest phase in the
+    # cycle - and the one thing it can usefully do without the code is decide what
+    # correct means. So it does that there: probes derived from the task file alone,
+    # written before any implementation exists to copy an expected value from. Buys back
+    # the probe-design time AND closes the failure recorded in all four of the first
+    # cycles, where a probe written after reading the code asserted what the code did.
+    # See the pre-brief section of the scout charter.
+    $prebriefOn = -not $NoPrebrief
+    if ($NoPrebrief) { Write-RunLog $log "spec-first pre-brief disabled by -NoPrebrief" }
+
+    # $prefetched holds the base name of a task the executor was started on early, while
+    # the validator was still grading the one before it. At most one is ever outstanding.
+    $prefetched = ''
+    if ($Pipeline) { Write-RunLog $log "pipelining ON - the executor starts the next task while the validator grades this one" }
 
     $mutationOn = (-not $NoMutation) -and [bool](Get-PaneId $s 'mutator')
     if ($NoMutation)        { Write-RunLog $log "mutation lane disabled by -NoMutation" }
@@ -1779,11 +2011,11 @@ if ($Command -eq 'autopilot') {
             $nextId = '{0:D3}' -f (1 + [int](@(Get-ChildItem (Join-Path $ws '.relay\tasks') -File -Filter *.md -EA 0 |
                         ForEach-Object { if ($_.BaseName -match '^(\d+)') { [int]$Matches[1] } else { 0 } } |
                         Measure-Object -Maximum).Maximum))
-            $msg = "Mutation sweep. These mutation reports have not been folded into any verdict yet: $list . Read each one. For every surviving mutant, decide whether it is a real gap in the tests or noise. Write a short summary to .relay/reports/$sweepName.md , first line VERDICT: PASS or VERDICT: FAIL - PASS if nothing is worth acting on. For each real gap that IS worth closing, also write a new task file to .relay/tasks/ using the standard task format (Objective, Scope, Requirements, Verification, Artifacts), starting at id $nextId and incrementing. Write no task files if nothing warrants one."
+            $msg = "Mutation sweep. These mutation reports have not been folded into any verdict yet: $list . Read each one. For every surviving mutant, decide whether it is a real gap in the tests or noise. Write a short summary to .relay/reports/$sweepName.md , first line VERDICT: PASS or VERDICT: FAIL - PASS if nothing is worth acting on - and second line NEXT-TASK: followed by the path of the first task file you wrote, or none. For each real gap that IS worth closing, also write a new task file to .relay/tasks/ using the standard task format (Objective, Scope, Requirements, Verification, Artifacts), starting at id $nextId and incrementing. Write the task files before the summary. Write no task files if nothing warrants one."
             Send-Line (Get-PaneTarget $s 'validator') $msg
 
             $tasksBeforeSweep = @(Get-ChildItem (Join-Path $ws '.relay\tasks') -File -Filter *.md -EA 0 | ForEach-Object { $_.Name })
-            $r = Wait-Artifact $s $sweepPath 1800 'validator' $log @('scout', 'executor')
+            $r = Wait-Artifact $s $sweepPath 1800 'validator' $log @('scout', 'executor') 0
             Write-RunLog $log "mutation sweep: $r"
 
             # Mark the inputs reviewed ONLY if the sweep actually produced its summary.
@@ -1805,7 +2037,9 @@ if ($Command -eq 'autopilot') {
             # Without this wait the loop re-scans too early, finds nothing, and exits -
             # throwing away the work the sweep just decided was needed.
             if ($r -eq 'ok') {
-                $newFromSweep = Wait-ForNewTasks $s $tasksBeforeSweep 45
+                $namedSweep = Get-NextTaskFromReport $s $sweepPath $log
+                if ($namedSweep) { $newFromSweep = @($namedSweep) }
+                else { $newFromSweep = Wait-ForNewTasks $s $tasksBeforeSweep 45 }
                 if ($newFromSweep.Count -gt 0) {
                     Write-RunLog $log "sweep dispatched: $($newFromSweep -join ', ')"
                 }
@@ -1822,7 +2056,13 @@ if ($Command -eq 'autopilot') {
 
         # Recycle before the cycle rather than during it: this is the one moment when no
         # agent is mid-task, so a restart costs nothing but the boot time.
-        foreach ($a in 'executor', 'scout', 'mutator') { Invoke-Recycle $s $a $log 3 }
+        foreach ($a in 'executor', 'scout', 'mutator') {
+            # A prefetched executor is mid-task even between turns, and Invoke-Recycle
+            # only checks Test-PaneBusy - which reads false in the gaps. Restarting
+            # there throws away a task's work with nothing to show that it happened.
+            if ($prefetched -and ($a -eq 'executor' -or $a -eq 'scout')) { continue }
+            Invoke-Recycle $s $a $log 3
+        }
 
         $resultPath   = Get-BusArtifact $s 'results'  $base
         $evidencePath = Get-BusArtifact $s 'evidence' $base
@@ -1839,11 +2079,55 @@ if ($Command -eq 'autopilot') {
         # this bus were in precisely that state (result and evidence present, no verdict)
         # when autopilot was written.
 
+        $prebriefPath = Join-Path $ws ".relay\probe\$base\PREBRIEF.md"
+        $wasPrefetched = $false
+        if ($prefetched -and $prefetched -eq $base) { $wasPrefetched = $true; $prefetched = '' }
+
         # 1. execute
         if (Test-Path $resultPath) {
-            Write-RunLog $log "$base already has a result - skipping the executor (resuming)"
+            if ($wasPrefetched) { Write-RunLog $log "$base was prefetched during the previous grade and is already done" }
+            else { Write-RunLog $log "$base already has a result - skipping the executor (resuming)" }
+        }
+        elseif ($wasPrefetched) {
+            # Dispatched a cycle early; the pane is still on it. Wait, do not dispatch again.
+            Write-RunLog $log "$base was prefetched and is still running - waiting rather than re-dispatching"
+            $r = Wait-Phase $s 'executor' $taskFile.FullName $resultPath 1800 $log @('scout', 'mutator')
+            if ($r -eq 'stopped') { $stopReason = 'stopped by .relay/STOP'; break }
+            if ($r -ne 'ok') {
+                Write-RunLog $log "executor did not produce a result for $base ($r) - stopping"
+                $summary += "| $base | executor $r | run halted |"
+                $stopReason = "executor could not complete $base"
+                break
+            }
         }
         else {
+            # A prefetch for a DIFFERENT task may still be in flight. By construction that
+            # should not happen - a validator follow-up always takes the next free id, so
+            # it sorts after anything already prefetched - but a task dropped in by hand
+            # with a lower id would do it, and dispatching into a busy agy pane loses the
+            # line silently and then times out against an agent that was working correctly.
+            if ($prefetched) {
+                Write-RunLog $log "executor is still on the prefetched $prefetched - waiting before dispatching $base"
+                $pfd = (Get-Date).AddMinutes(30)
+                while ((Get-Date) -lt $pfd -and
+                       -not (Test-Path (Get-BusArtifact $s 'results' $prefetched)) -and
+                       (Test-PaneBusy (Get-PaneTarget $s 'executor'))) {
+                    if (Test-StopRequested $s) { break }
+                    Start-Sleep -Seconds 10
+                }
+            }
+
+            # Dispatched first and never waited on: the executor phase is the budget it
+            # runs inside. If it does not finish in time the scout simply probes the old
+            # way, which its charter covers.
+            if ($prebriefOn -and -not (Test-Path $prebriefPath)) {
+                New-Item -ItemType Directory -Force (Split-Path $prebriefPath) | Out-Null
+                if (Assert-AgentReady $s 'scout' $log) {
+                    if ((Invoke-Dispatch $s 'scout' $taskFile.FullName '' 'prebrief') -ne 'ok') {
+                        Write-RunLog $log "scout refused the pre-brief - continuing without one"
+                    }
+                }
+            }
             $r = Invoke-Phase $s 'executor' $taskFile.FullName $resultPath 1800 $log @('scout', 'mutator')
             if ($r -eq 'stopped') { $stopReason = 'stopped by .relay/STOP'; break }
             if ($r -ne 'ok') {
@@ -1865,6 +2149,22 @@ if ($Command -eq 'autopilot') {
             Write-RunLog $log "$base already has scout evidence - skipping the scout (resuming)"
         }
         else {
+            # One pane does one thing at a time, and a line typed into a busy agy pane is
+            # swallowed. If the pre-brief is still running, wait for it - briefly - rather
+            # than dispatching the evidence pass into a pane that will never read it.
+            if ($prebriefOn -and -not (Test-Path $prebriefPath) -and
+                (Test-PaneBusy (Get-PaneTarget $s 'scout'))) {
+                Write-RunLog $log "waiting up to 5m for the scout's pre-brief to land before the evidence pass"
+                $pdl = (Get-Date).AddMinutes(5)
+                while ((Get-Date) -lt $pdl -and -not (Test-Path $prebriefPath) -and
+                       (Test-PaneBusy (Get-PaneTarget $s 'scout'))) {
+                    if (Test-StopRequested $s) { break }
+                    Start-Sleep -Seconds 5
+                }
+            }
+            if ($prebriefOn -and -not (Test-Path $prebriefPath)) {
+                Write-RunLog $log "no pre-brief for $base - the scout will probe post-hoc"
+            }
             $r = Invoke-Phase $s 'scout' $taskFile.FullName $evidencePath 1200 $log @('mutator')
             if ($r -eq 'stopped') { $stopReason = 'stopped by .relay/STOP'; break }
             if ($r -ne 'ok') {
@@ -1882,7 +2182,53 @@ if ($Command -eq 'autopilot') {
         }
         $tasksBefore = @(Get-ChildItem (Join-Path $ws '.relay\tasks') -File -Filter *.md -EA 0 | ForEach-Object { $_.Name })
 
-        $r = Invoke-Phase $s 'validator' $taskFile.FullName $reportPath 1800 $log @('scout', 'mutator', 'executor') $note
+        # --- prefetch: start the next task while the validator grades this one -----
+        #
+        # This is the one moment in the cycle when the executor and the scout are both
+        # idle and will stay idle for a long time. Dispatching here and never waiting
+        # takes a whole executor phase off the wall clock for every task after the
+        # first. The dispatch is fire-and-forget; the next cycle picks the result up
+        # through the same artifact-exists check that makes an interrupted run resumable.
+        $pipeNote = ''
+        if ($Pipeline -and -not $prefetched) {
+            # Re-scan rather than reusing $pending from the top of the cycle: tasks can
+            # be added mid-cycle (a mutation sweep, a human dropping one in), and this
+            # task has no report yet so it is still index 0 - the same second entry the
+            # bash port takes with `pending_tasks | sed -n 2p`.
+            $nowPending = @(Get-PendingTasks $s)
+            $nxt = if ($nowPending.Count -gt 1) { $nowPending[1] } else { $null }
+            if (-not $nxt) { }
+            elseif (Test-ScopesIntersect $taskFile.FullName $nxt.FullName) {
+                Write-RunLog $log "not prefetching $($nxt.BaseName) - its scope overlaps $base (or one of them does not state a parseable scope)"
+            }
+            else {
+                $nbase = $nxt.BaseName
+                if (Assert-AgentReady $s 'executor' $log) {
+                    if ((Invoke-Dispatch $s 'executor' $nxt.FullName) -eq 'ok') {
+                        $prefetched = $nbase
+                        Write-RunLog $log "prefetching $nbase on the executor while the validator grades $base"
+                        $pipeNote = "Note: pipelining is on, so the executor is concurrently working on a LATER task ($nbase) in this same tree. Its scope does not overlap this one. Grade from the diff the scout captured, not from a fresh git diff, and treat changes to files outside this task's Scope as not yours to judge."
+                        $npb = Join-Path $ws ".relay\probe\$nbase\PREBRIEF.md"
+                        if ($prebriefOn -and -not (Test-Path $npb)) {
+                            New-Item -ItemType Directory -Force (Split-Path $npb) | Out-Null
+                            if (Assert-AgentReady $s 'scout' $log) {
+                                if ((Invoke-Dispatch $s 'scout' $nxt.FullName '' 'prebrief') -ne 'ok') {
+                                    Write-RunLog $log "scout refused the prefetched pre-brief"
+                                }
+                            }
+                        }
+                    }
+                    else { Write-RunLog $log "executor refused the prefetch - $nbase will run in its own cycle" }
+                }
+            }
+        }
+
+        if ($pipeNote) { $note = "$note $pipeNote" }
+        # Idle-pane keepalive must skip anything the prefetch put to work. Keepalive
+        # restarts a pane that does not answer, and an executor mid-task between turns
+        # can miss a probe - which would kill the prefetch to prove it was alive.
+        $valIdle = if ($prefetched) { @('mutator') } else { @('scout', 'mutator', 'executor') }
+        $r = Invoke-Phase $s 'validator' $taskFile.FullName $reportPath 1800 $log $valIdle $note
         if ($r -eq 'stopped') { $stopReason = 'stopped by .relay/STOP'; break }
         if ($r -ne 'ok') {
             Write-RunLog $log "validator produced no report for $base ($r) - stopping"
@@ -1905,7 +2251,12 @@ if ($Command -eq 'autopilot') {
             # nothing for the next cycle to pick up and looping would spin forever.
             # It writes the task AFTER the report, so this has to wait rather than scan
             # once - scanning once turns a slow write into a false "no follow-up".
-            $new = Wait-ForNewTasks $s $tasksBefore 45
+            $named = Get-NextTaskFromReport $s $reportPath $log
+            if ($named) {
+                $new = @($named)
+                Write-RunLog $log "validator named its follow-up: $named"
+            }
+            else { $new = Wait-ForNewTasks $s $tasksBefore 45 }
             if ($new.Count -eq 0) {
                 $stopReason = "$base FAILED and the validator wrote no follow-up task - a human needs to decide the next move"
                 break
@@ -1919,6 +2270,12 @@ if ($Command -eq 'autopilot') {
     }
 
     # --- run summary ----------------------------------------------------------
+    # A prefetched executor keeps working after this loop exits, exactly like an agent
+    # interrupted mid-wait, and its result lands with nothing watching for it.
+    if ($prefetched -and -not (Test-Path (Get-BusArtifact $s 'results' $prefetched))) {
+        $script:OrphanedWork += "executor was prefetched onto ``$prefetched`` and is STILL WORKING - its result will land after this run exits"
+    }
+
     $elapsed = [math]::Round(((Get-Date) - [datetime]::ParseExact($stamp, 'yyyyMMdd-HHmmss', $null)).TotalMinutes, 1)
     Add-Content $log "`r`n## Summary`r`n" -Encoding utf8
     Add-Content $log "stopped because: $stopReason" -Encoding utf8

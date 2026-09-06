@@ -1,5 +1,5 @@
 ---
-description: "Run a full relay cycle: Gemini executes, Gemini scouts evidence, Opus validates"
+description: "Run a full relay cycle: Gemini executes, Gemini scouts evidence, Sonnet validates"
 ---
 
 Run one full relay cycle for: $ARGUMENTS
@@ -93,8 +93,8 @@ Write it as a normal numbered requirement and say which mutation settles it:
 
 Then **stop**. Do not add routing instructions. Task 007 carried a hand-written
 `## Notes for the scout and validator` block telling the scout to skip it and the
-validator to run the mutation itself — and it worked, at Opus prices, for shell work a
-free pane exists to do. That block is now wrong: the scout marks it `none` and points at
+validator to run the mutation itself — and it worked, burning Claude quota on shell work
+a free pane exists to do. That block is now wrong: the scout marks it `none` and points at
 the mutation lane, the mutator runs it on its snapshot, and the validator reads the
 result. All three know this from their charters.
 
@@ -107,11 +107,40 @@ Where two requirements can conflict on some input, decide it in the task rather 
 leaving it for the executor to resolve silently. If you genuinely want it left open, say so
 explicitly so the scout files it as an open question instead of guessing.
 
-## 2. Dispatch to the executor
+## 2. Dispatch to the executor — and the scout's pre-brief alongside it
+
+Send both. The scout is otherwise idle for the whole executor phase, which is the longest
+phase in the cycle, and the one useful thing it can do without the code is decide what
+*correct* means:
 
 ```
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent executor -Task ".relay/tasks/NNN-<slug>.md"
+powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent scout -Task ".relay/tasks/NNN-<slug>.md" -Phase prebrief
 ```
+
+The pre-brief has the scout write its probes from the task file alone — no diff, no
+source, no result file — into `.relay/probe/NNN-<slug>/`, with the clause each expected
+value came from in `PREBRIEF.md`. Do not wait on it; it runs inside the executor's budget.
+
+This is worth the extra call for accuracy, not just speed. Every recorded cycle of this
+relay has produced at least one probe that asserted what the implementation happened to
+do — `parse_duration("١h") == 3600`, `truncate("hello", 1) == "."` under a `# Req 3`
+comment — because by the time the probe gets written, the code is the most available
+answer in the pane's context. A probe that encodes the implementation cannot fail.
+Writing them before the implementation exists is the only fix that has held.
+
+Anything the scout cannot turn into an expected value from the task alone comes back as
+an open question, and it is a genuine finding: it means the spec did not decide something.
+Expect to amend the task when that happens.
+
+### Scope, and why it is now load-bearing
+
+The `Scope` → `In:` line was documentation before; under `/relay-auto -Pipeline` it is
+machinery. Autopilot reads it to decide whether the executor can safely start the next
+task while the validator grades this one, and it refuses the overlap conservatively: a
+shared path, one path inside the other's directory, a wildcard, or a task with no
+parseable `In:` line at all, all count as "do not pipeline". So a vague scope does not
+produce a risky run — it produces a serial one. List real paths.
 
 ## 3. Wait for the result
 
@@ -133,8 +162,12 @@ sits in each pane.
 The scout does more than re-run commands: it reads the assertion bodies of the executor's
 tests and writes its own edge-case probes under `.relay/probe/`. It runs on Gemini, so
 that depth is free. Its evidence file is compacted on purpose — passing commands reduce
-to a result line, failures are pasted in full — so the validator, which is Opus and the
+to a result line, failures are pasted in full — so the validator, which is Sonnet and the
 only Claude pane in the relay, spends its budget on judgment rather than on green logs.
+
+Check the pre-brief landed before dispatching this — one pane does one thing at a time,
+and a line typed into a busy `agy` pane is swallowed. If `.relay/probe/NNN-<slug>/PREBRIEF.md`
+is not there yet, `capture -Agent scout` and give it a few minutes.
 
 ```
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent scout -Task ".relay/tasks/NNN-<slug>.md"
@@ -145,8 +178,8 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" wait -Fil
 
 On 2026-08-10 the scout wedged, and the next five task cycles ran executor → validator
 with no evidence at all. Nothing was broken enough to stop anything: each cycle looked
-fine, and Opus quietly did the scout's shell work at Opus prices — the exact cost
-inversion this relay exists to prevent. The validator noticed and said so in its reports;
+fine, and the validator quietly did the scout's shell work on Claude quota — the exact
+cost inversion this relay exists to prevent. The validator noticed and said so in its reports;
 nobody was reading reports for process failures.
 
 So treat a missing evidence file as a **hard stop**, never as a reason to move on:

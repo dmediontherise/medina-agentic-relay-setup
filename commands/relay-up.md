@@ -1,12 +1,13 @@
 ---
-description: "Bring up the agentic relay (agy executor + agy scout + agy mutator + Opus validator panes)"
+description: "Bring up the agentic relay (agy executor + agy scout + agy mutator + Sonnet validator panes)"
 ---
 
 Start the multi-agent relay for the current workspace.
 
 Four agents in one psmux session: **executor** (agy) implements, **scout** (agy) gathers
 evidence, **mutator** (agy) runs mutation testing in parallel on a frozen snapshot, and
-**validator** (Opus) grades. Only the validator costs Claude quota.
+**validator** (Sonnet) grades. Only the validator costs Claude quota; Opus stays in the
+orchestrator seat, which is this session, not a pane.
 
 To scaffold a brand-new project instead of using the current one, use `/relay-new`.
 
@@ -15,6 +16,10 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Workspace "<current workspace path>"
    ```
    Add `-Safe` if the user asked for gated approvals instead of unattended agents.
+   Add `-Model <id>` to run the three `agy` panes on something other than the default
+   `gemini-3.8-flash-high` — `agy models` lists what the account can reach. A single
+   pane can be moved on its own with `RELAY_AGY_MODEL_EXECUTOR`, `_SCOUT` or `_MUTATOR`
+   in the environment instead.
 
 2. Report any preflight warning the script prints verbatim. A missing `agy` or `claude`
    binary means that pane will not start at all.
