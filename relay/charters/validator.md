@@ -95,9 +95,22 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
    of correctness, and neither is a well-named stub. Where the audit flags something and
    the requirement hangs on it, open the test yourself and read it.
 
-6. Weigh the probes. A failed probe on a case the task implies is a defect even when
-   every stated verification command passed — the stated commands were written by the
-   same process that wrote the code. A probe the scout could not run is not a pass.
+6. Weigh the probes, and **read the `Written` column before you weigh them.** A `pre`
+   probe was written from the task file alone while the executor was still working, so
+   its expected value provably did not come from the implementation — that is the
+   strongest kind of row in the file, and a failing one is a defect until shown
+   otherwise. A `post` probe was written with the code in front of it and carries the
+   standing risk that it ratifies what it found; a `post` probe that passes on an
+   underspecified case tells you where its expected value came from.
+
+   A failed probe on a case the task implies is a defect even when every stated
+   verification command passed — the stated commands were written by the same process
+   that wrote the code. A probe the scout could not run is not a pass.
+
+   If the evidence file has **no `pre` rows at all**, the pre-brief did not run. Say so in
+   one line under Concerns and hold the `post` probes to the harder standard: for any
+   requirement resting on a passing probe alone, check the expected value against the
+   clause yourself before you accept it.
 
    Read the scout's **Open questions** as work assigned to you: each one is a place the
    task did not decide something, and deciding it is your call, not the executor's. Treat
@@ -108,6 +121,13 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
 7. **Read the mutation report if one exists** at `.relay/mutation/NNN-*.md`. A surviving
    mutant is the strongest evidence available that a test suite is decorative: the code
    was deliberately broken and every test still passed. Weigh it accordingly.
+
+   Read its **Mutant zero** section first. That is the red-check — the change reverted,
+   the new tests kept, and every one of them expected to go red. A new test that stays
+   green against the pre-change source does not pin the change and is not evidence that
+   the requirement is met, whatever the green suite says. This used to be something this
+   seat improvised mid-grade; it is the mutator's standing first duty now, so read the
+   answer rather than re-deriving it.
 
    It will often be **absent**, and that is normal — the mutation pass runs in parallel
    with you on a frozen copy of the workspace and is never waited on, so it simply may not
@@ -143,11 +163,20 @@ diff is correct in every line and wrong as a whole. Spend yourself there.
 
 ## Verdict format
 
-The first line of the file must be the machine-readable verdict, so the orchestrator can
-route on it without reading the whole report.
+The first two lines of the file are machine-readable, so the orchestrator can route on
+them without reading the whole report.
+
+`NEXT-TASK:` names the follow-up task file you wrote, or `none`. Autopilot reads it
+directly instead of watching `.relay/tasks/` for something new to appear — a poll that
+cannot tell your follow-up apart from a task someone else dropped in, and that spends 45
+seconds on every FAIL deciding whether you wrote one. Name the path and both problems go
+away. Get it right in both directions: `none` when you wrote no task, the real relative
+path when you did. A FAIL with `NEXT-TASK: none` stops the run and asks for a human,
+which is correct when you meant it and expensive when you did not.
 
 ```markdown
 VERDICT: PASS | PASS-WITH-CONCERNS | FAIL
+NEXT-TASK: .relay/tasks/NNN-slug.md | none
 
 # Verdict: <task id and title>
 
@@ -179,6 +208,26 @@ that the executor can act on it without re-deriving the problem.
 
 Keep the report proportional to the change. A clean small task deserves a short verdict;
 padding it costs the relay's only expensive budget and buys nothing.
+
+## When another task is being written while you grade
+
+The relay can be run with pipelining on, in which case the executor starts the **next**
+task while you grade this one, in the same working tree. When that is happening your
+dispatch says so and names the concurrent task. Two rules follow, and they hold whether
+or not the note is there:
+
+- **Grade the diff the scout captured, not a fresh `git diff`.** The scout's `Files
+  actually changed` and `Diff summary` are a snapshot of the tree as it stood when this
+  task finished. A `git diff` you run now may also contain a later task's work. If you do
+  run one and see files the evidence does not, that is the explanation — not a
+  discrepancy, and not scope creep by the executor.
+- **Changes outside this task's Scope are not yours to judge.** The relay only pipelines
+  when the two tasks' `In:` scopes are disjoint, so anything outside this one's scope
+  belongs to the other task and gets its own verdict. Do not fail this task for it, and do
+  not fold it into Concerns.
+
+What does *not* change: a file inside this task's scope that the evidence does not account
+for is still a finding, exactly as it was before.
 
 ## Writing the follow-up task on a FAIL
 

@@ -39,9 +39,9 @@ loop with an independent verification chain.
 | Role | Model | Job |
 |---|---|---|
 | **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides. Under `autopilot`, only the first of those |
-| **Executor** | `agy` on `gemini-3.7-flash-high` | Implements the task. Never grades its own work |
-| **Scout** | `agy` on `gemini-3.7-flash-high` | Re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
-| **Mutator** | `agy` on `gemini-3.7-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
+| **Executor** | `agy` on `gemini-3.8-flash-high` | Implements the task. Never grades its own work |
+| **Scout** | `agy` on `gemini-3.8-flash-high` | Writes its probes from the spec before the code exists, then re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
+| **Mutator** | `agy` on `gemini-3.8-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
 | **Validator** | Claude Sonnet | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
 
 ### Why the scout exists
@@ -57,10 +57,90 @@ being judged.
 Do not collapse the scout and validator back into one role. The independence chain is the
 entire point — an agent that gathers its own evidence grades its own summary of it.
 
+The model is a variable, not a literal. `--model` / `-Model` on `up` moves all three
+`agy` panes for a run, `RELAY_AGY_MODEL` sets a persistent default, and
+`RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time — useful for the
+mutator, which is never on the critical path and whose loop is mechanical, so a medium
+tier buys more mutants inside its time budget at no cost to the verdict. `agy models`
+lists what your account can reach. The default moved 3.6 → 3.7 on 2026-08-29 and
+3.7 → 3.8 on 2026-09-06.
+
 Note that the executor and the scout share a model. That does not weaken the chain:
 independence here comes from **role separation**, not model identity. The scout is a
 separate process with a separate charter that never sees the executor's reasoning — only
 the diff and the result file, both of which it treats as claims.
+
+### The pre-brief: the scout's probes are written before the code exists
+
+The relay dispatches the scout **twice** per task. The first dispatch goes out at the same
+moment as the executor's and says *pre-brief*: read the task file and nothing else, and
+write your probes — and the clause each expected value comes from — from the requirements
+alone. No diff, no source, no result file, and the probes are not run. The second dispatch,
+after the executor finishes, is the evidence pass as it always was, starting from those
+probes.
+
+Two things fall out of that, and the second is why it exists.
+
+It takes probe *design* off the critical path. The scout is otherwise idle for the whole
+executor phase — the longest phase in the cycle — and deciding what correct means is the
+one part of its job that needs no implementation.
+
+And it is the only fix that has held for the failure recorded in every cycle below:
+`parse_duration("١h") == 3600` in cycle 1, `truncate("hello", 1) == "."` under a `# Req 3`
+comment in cycle 2, the contested tie-group value in cycle 3, the silent resolution against
+amendment B in cycle 4. Each derived its expected value from the code rather than from the
+requirement, and **a probe that encodes the implementation cannot fail.** The charter was
+tightened three times and it kept happening, because by the time the probe gets written the
+code is the most available answer in the pane's context. So the relay stops writing rules
+about it and removes the code from the context instead.
+
+A requirement the scout cannot turn into an expected value without looking at the code is
+a requirement the task failed to decide. Those come back as open questions, and they are
+findings — the same defect the validator has been catching after the fact, surfaced before
+any code was written against it.
+
+Evidence rows now carry a `Written` column, `pre` or `post`, and the validator weighs them
+differently. `--no-prebrief` / `-NoPrebrief` turns the lane off; the scout's charter covers
+running without one.
+
+### Pipelining, and the guarantee it spends
+
+By the time the validator is grading task N, the executor has been idle since N's result
+landed and stays idle for the whole grade — which is the longest single stretch of dead
+time in the cycle. `--pipeline` / `-Pipeline` starts the executor on N+1 there, and never
+waits on it: the next cycle picks the result up through the same artifact-exists check
+that makes an interrupted run resumable. On a queue of independent tasks that removes a
+whole executor phase from the wall clock of every task after the first.
+
+It is **off by default**, because it spends a real guarantee. Run serially, exactly one
+task's changes are in the tree at any moment. Pipelined, the validator may be grading N
+while N+1's edits land around it.
+
+Three things keep that tolerable, and it is worth knowing that they are all the relay
+does — there is no locking here:
+
+- **The scope guard.** The prefetch is refused unless the two tasks' `Scope` → `In:` paths
+  are disjoint. Overlap is decided conservatively: a shared path, either path containing
+  the other as a directory, a wildcard, or a scope that cannot be parsed at all each count
+  as overlapping. **A task with no `In:` line is never prefetched past**, which makes this
+  as safe as your task files are specific — a vague scope costs you the speedup, not the
+  guarantee. The rule is also in the validator's charter, not only in its dispatch.
+- **The validator is told.** Its dispatch carries a note naming the concurrent task, and
+  its charter carries the standing rule: grade from the diff the scout already captured
+  rather than from a fresh `git diff`, and treat changes outside this task's scope as
+  another task's business. A file *inside* scope that the evidence does not account for is
+  still a finding.
+- **The prefetched panes are protected.** Idle-pane keepalive and the preemptive recycler
+  both skip an executor or scout the prefetch put to work — otherwise a probe missed
+  between turns would restart the pane and throw the work away to prove it was alive. A
+  prefetch interrupted by `.relay/STOP` is recorded under *work left in flight*.
+
+The mutation lane is unaffected: its snapshot for N is frozen the moment N's result lands,
+before any prefetch starts.
+
+So: **turn it on for a queue of genuinely independent tasks with real `In:` lines, and
+leave it off for a chain of follow-ups that all touch the same files.** In the second case
+it buys nothing anyway — every prefetch would be refused by the guard.
 
 ### The economics, which drive the whole design
 
@@ -99,7 +179,8 @@ and is forbidden by its charter from writing to the others.
 ├── evidence/NNN-slug.md   Scout writes         →  the observation
 ├── reports/NNN-slug.md    Validator writes     →  the verdict
 ├── mutation/NNN-slug.md   Mutator writes       →  surviving mutants
-├── probe/                 Scout's throwaway edge-case tests (scratch)
+├── probe/<task>/          Scout's probes for that task (scratch), plus PREBRIEF.md —
+│                          the expectations it derived from the spec before any code
 ├── mutants/<task>/        Mutator's isolated worktree snapshot per task
 ├── logs/                  autopilot run logs
 ├── launch/                generated pane launcher scripts
@@ -107,12 +188,24 @@ and is forbidden by its charter from writing to the others.
 └── executor|scout|mutator|validator.md   charters, copied in at `up`
 ```
 
+`.relay/health/` also holds the liveness nonces and the progress marker autopilot uses to
+tell a wedged pane from a slow one.
+
 The **mutator** is a second scout that does one thing the first structurally cannot. The
 scout may not edit source — that prohibition is what makes its evidence trustworthy, since
 it cannot repair what it reports on — but mutation testing *requires* editing source. So
 the rule is relocated rather than relaxed: the mutator edits freely inside a snapshot at
 `.relay/mutants/<task>/` and never touches the live tree. It is never on the critical
 path, so a verdict is never held behind it.
+
+Its first mutant is fixed by contract and costs one command: **revert the change, keep the
+new tests, and every one of them should go red.** The snapshot is built to make that cheap
+— `HEAD` is the tree before the executor touched it and the executor's work sits in the
+index on top — and a new test that stays green against the pre-change source does not pin
+the change, whatever the green suite says. The validator invented this check mid-grade in
+cycle 4 and it was the most valuable thing in the run; it was also shell work happening in
+the one seat this relay pays for, which is the inversion the whole design exists to avoid.
+It belongs to the free pane now.
 
 ---
 
@@ -151,11 +244,9 @@ Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 > `autopilot`, `snapshot`, and process-level crash detection. Written for bash 3.2, so it
 > runs on macOS's system bash without installing a newer one.
 >
-> Caveat worth knowing: its git/snapshot logic has been exercised directly, but the
-> tmux-facing paths have only been run against psmux (a tmux-3.3.7-compatible
-> reimplementation), never against real tmux on macOS or Linux. Behaviour should be
-> identical — the script uses only documented tmux commands — but if something misbehaves
-> on a real tmux, that is the untested seam. Report it rather than working around it.
+> As of 2026-09-06 it has been run against real tmux on Linux, not only against psmux —
+> two full autopilot cycles with stubbed agent binaries. macOS is still untested. If you
+> are the first there, please open an issue with what broke.
 
 ```bash
 git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
@@ -206,15 +297,25 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 ~/.claude/relay/relay.sh up -w .
 ```
 
+`--model <id>` / `-Model <id>` moves the three `agy` panes off the default
+`gemini-3.8-flash-high` for that run; `RELAY_AGY_MODEL` sets a persistent default, and
+`RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time.
+
 Then drive a full cycle from your Claude session with `/relay-task <what you want built>`.
 For a queue of tasks, `/relay-auto` runs all of them unattended. Or by hand:
 
 ```bash
 R=~/.claude/relay/relay.sh                 # Windows: see the PowerShell form above
 
+# The scout's pre-brief goes out with the executor and is not waited on: it writes
+# probes from the spec alone, before there is an implementation to copy an expected
+# value from. See "The pre-brief" above.
 $R dispatch -a executor  -T .relay/tasks/001-slug.md
+$R dispatch -a scout     -T .relay/tasks/001-slug.md  -p prebrief
 $R wait     -f .relay/results/001-slug.md  -a executor  --timeout 1200
 
+# Check .relay/probe/001-slug/PREBRIEF.md landed before this one - a pane does one
+# thing at a time, and a line typed into a busy agy pane is swallowed.
 $R dispatch -a scout     -T .relay/tasks/001-slug.md
 $R wait     -f .relay/evidence/001-slug.md -a scout     --timeout 900
 
@@ -227,7 +328,7 @@ $R wait     -f .relay/reports/001-slug.md  -a validator --timeout 1200
 | `new <name>` | Scaffold a project, then bring the relay up on it |
 | `up` / `down` | Build or tear down the session |
 | `status` | Session health, pane state, bus contents |
-| `dispatch -a <agent> -T <task>` | Hand a task file to an agent |
+| `dispatch -a <agent> -T <task>` | Hand a task file to an agent. `-p prebrief` sends the scout its spec-first pass instead |
 | `wait -f <artifact>` | Block until an artifact lands. Exit 2 on timeout, with a pane dump |
 | `capture -a <agent>` | Print the tail of a pane — **use this before assuming an agent is busy** |
 | `send -a <agent> -t <text>` | Type a line into a running agent |
@@ -238,6 +339,11 @@ Attach to watch it live: `tmux attach -t relay` (Windows: `psmux attach -t relay
 ### Writing a task file
 
 The validator grades against this file, so vagueness here produces a worthless verdict.
+The `In:` line is machinery, not decoration, once `--pipeline` is on: autopilot reads it
+to decide whether the next task can start early, and refuses whenever it cannot prove the
+two are disjoint. A vague scope produces a serial run, not a risky one — but it does cost
+you the speedup, so list real paths.
+
 Requirements must be checkable by someone who did not write them.
 
 ```markdown
@@ -340,6 +446,21 @@ thinking. `up` clears the folder-trust prompt automatically, but always run
 **`wait` times out.** It exits 2 and dumps the last 30 lines of that agent's pane. Read
 that dump before retrying — it is almost always a prompt, not a slow model.
 
+**A pane is busy and producing nothing.** A wedged `agy` pane keeps drawing its spinner,
+so "is it busy?" is not the same question as "is it working?" — and autopilot used to
+answer the first and then *double its own wait* on the strength of it. On 2026-08-30 two
+such stalls cost 4h15m and produced nothing. Autopilot now asks the filesystem instead:
+if nothing has been written anywhere in the workspace for ten minutes, the pane is
+stalled rather than slow, and it is restarted and re-dispatched. `.git`, `.relay/logs`,
+`.relay/health` and `.relay/mutants` are excluded from that check, because writes there
+happen without the agent being waited on having done anything.
+
+The validator is exempt. Its contract is judgment, it is told explicitly not to redo the
+scout's shell work, and its entire output is one file written at the end — twelve quiet
+minutes there is a pane reading, and restarting it would burn the only quota this relay
+spends and start the grade over. That seat stays covered by the fault check and the
+timeout, as it always was.
+
 **Do not launch agents by typing into a pane.** The launchers exist for a reason. Three
 independent failure modes bite, and all three present as *"the binary isn't installed"*:
 
@@ -375,16 +496,60 @@ read*, not just that the word appeared.
 
 ## What has actually been verified
 
-Being straight about this, since the failure modes above were all found the hard way:
+Being straight about this, since the failure modes above were all found the hard way.
+
+**On the 2026-09-06 changes,** split by what was actually exercised.
+
+*Verified.* `gemini-3.8-flash-{high,medium,low}` are present in `agy models` — checked,
+not assumed. Both control planes parse. The new helpers — `next_task_from_report` /
+`Get-NextTaskFromReport`, `progress_seen`, and both dispatch-message builders — have unit
+tests that pass under bash and Windows PowerShell 5.1 (13 and 11 cases, including CRLF
+reports, `none`, an absent line, and a task file named but missing). And `relay.sh` ran
+two complete autopilot cycles against real tmux with stubbed agent binaries: the pre-brief
+dispatched alongside the executor and its `PREBRIEF.md` landed, the mutation lane ran in
+parallel off a git-worktree snapshot, a FAIL was routed to its follow-up through the
+`NEXT-TASK:` line, and the second cycle drained the queue. Pane restarts fired and
+recovered mid-run — which is what confirms the subshell fixes: budgets decremented across
+`$( )` boundaries, and the parent loop picked up renumbered pane ids instead of
+dispatching into a dead pane.
+
+Pipelining was exercised the same way, in three cases run back to back against untouched
+code, all of which drained cleanly:
+
+| Case | Second task's scope | Result |
+|---|---|---|
+| A | disjoint (`src/a.py` vs `docs/r.md`) | prefetched during the first grade; cycle 2 logged `was prefetched during the previous grade and is already done` and reached its verdict in **55s** |
+| B | identical (`src/a.py`) | refused; cycle 2 ran serially and took **105s** |
+| C | no `Scope` section at all | refused |
+
+The 55s-vs-105s gap is the executor phase disappearing into the grade before it — with a
+20-second stubbed executor. Against a real one the difference is the length of a real
+executor phase. The helpers behind it
+(`task_scope_in`, `scopes_intersect`, `Get-TaskScopeIn`, `Test-ScopesIntersect`) carry 12
+and 13 unit tests, and every new bash helper is additionally called as a bare statement
+under `set -euo pipefail` — which is how the one real bug in them was found: an empty
+Scope section made `grep` exit 1, `pipefail` made that a failed pipeline, and `errexit`
+would have killed the run for the most ordinary input the function has.
+
+*Not verified.* The charter changes are contract text — the pre-brief's discipline, mutant
+zero, the `pre`/`post` weighting — and only a real model can be observed following them.
+`relay.ps1` has the same changes but was only parse-checked and unit-tested; its
+end-to-end path was not re-run. And nothing here has been through a cycle with live
+models. Treat the first real run on this configuration as a shakedown, and read the first
+evidence file for whether `pre` rows actually appear.
 
 - **`relay.ps1` (Windows/psmux)** — proven end to end on 2026-08-08. A full cycle ran
   unattended on a real task: executor implemented it, scout gathered independent evidence,
   validator returned PASS-WITH-CONCERNS. All eight subcommands exercised.
-- **`relay.sh` (macOS/Linux/tmux)** — the same design ported. Syntax-checked, and its
-  logic exercised against a stubbed `tmux`: launcher generation, argument escaping,
-  workspace-relative path resolution, timeout/exit-code behavior, and every subcommand.
-  It has **not yet been run against real tmux on macOS or Linux.** If you are the first to
-  do so, please open an issue with what broke.
+- **`relay.sh` (macOS/Linux/tmux)** — the same design ported, and as of 2026-09-06 it
+  has been **run against real tmux** (3.6 on Linux/WSL2) rather than only against psmux
+  and a stub. Two full autopilot runs completed end to end with stubbed `agy` and
+  `claude` binaries standing in for the models: `up` built and probed all five panes,
+  a PASS run drove execute → pre-brief → snapshot → mutation → scout → validate and
+  drained the queue, and a FAIL run took the `NEXT-TASK:` follow-up through a second
+  cycle to PASS. Pane restarts fired and recovered mid-run in both. What is still
+  untested there is macOS specifically, and any behaviour that depends on the real
+  models rather than on the control plane.
 
 The relay worked as designed in that first real run: the scout noticed the implementation's
 regex was Unicode-aware and untested and recorded it as an observation; the validator pulled

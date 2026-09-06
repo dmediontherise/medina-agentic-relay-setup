@@ -29,7 +29,14 @@ SESSION="${RELAY_SESSION:-relay}"
 
 ALL_AGENTS="executor validator scout mutator"
 
-say()  { printf '\033[36m[relay]\033[0m %s\n' "$*"; }
+# Chatter goes to stderr, protocol values to stdout. Several functions here are
+# called inside $(...) for their return string - wait_artifact, invoke_phase,
+# new_mutant_snapshot - and any one of them may log on the way. Printing progress
+# on stdout put those lines INSIDE the captured value, so `case "$r" in ok)` fell
+# through on every path that logged. That is why a .relay/STOP during a wait did
+# not stop the run: wait_artifact logged two lines and then printed 'stopped', and
+# the caller compared the whole three-line blob against 'stopped'.
+say()  { printf '\033[36m[relay]\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[33m[relay] WARNING:\033[0m %s\n' "$*" >&2; }
 fail() { printf '\033[31m[relay] ERROR:\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -37,6 +44,10 @@ need_tmux() {
   command -v tmux >/dev/null 2>&1 || fail "tmux not found. macOS: brew install tmux . Debian/Ubuntu: sudo apt install tmux"
 }
 
+# Also called mid-run by autopilot, not just at startup. Restarts happen inside command
+# substitutions - subshells - which call save_state, so after one the pane ids on disk
+# are correct and the ones in this shell point at panes that were killed. Re-reading is
+# what keeps the next dispatch from being typed into a dead pane.
 load_state() {
   [ -f "$STATE_FILE" ] || fail "Relay is not up. Run: relay.sh up -w <workspace>"
   # shellcheck disable=SC1090
@@ -350,13 +361,15 @@ usage() {
 Medina Agentic Relay - tmux control plane
 
   relay.sh new  <project-name|path>         Scaffold a project, then bring the relay up on it
-  relay.sh up   [-w <workspace>] [--safe]   Build the session and boot the agents
+  relay.sh up   [-w <workspace>] [--safe] [--model <id>]
+                                            Build the session and boot the agents
   relay.sh down                             Tear the session down
   relay.sh status                           Session state, pane list, bus contents
   relay.sh health   [-a <agent>] [--deep]   Prove each agent still answers
   relay.sh restart  -a <agent|all>          Respawn a wedged or crashed pane in place
   relay.sh send     -a <agent> -t <text>    Type a line into a running agent
-  relay.sh dispatch -a <agent> -T <task.md> Hand a task file to an agent
+  relay.sh dispatch -a <agent> -T <task.md> [-p prebrief]
+                                            Hand a task file to an agent
   relay.sh capture  -a <agent> [-n 60]      Print the tail of a pane
   relay.sh wait     -f <artifact> [-a <agent>] [--timeout 900]
   relay.sh snapshot -T <task.md>            Freeze the workspace for a mutation pass
@@ -372,6 +385,14 @@ Medina Agentic Relay - tmux control plane
     --max-fails N           consecutive FAILs before stopping    (default 3)
     --mutation-drain-min N  wait for late mutation reports       (default 20)
     --no-mutation           skip the mutation lane entirely
+    --no-prebrief           skip the scout's spec-first pre-brief pass
+    --pipeline              start the next task on the executor while the validator
+                            grades this one. Skipped when the two tasks' Scope 'In:'
+                            paths overlap, or when either does not state one
+
+  agy model for the executor / scout / mutator panes, in precedence order:
+    --model <id> on 'up'  >  RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}  >  RELAY_AGY_MODEL
+    default: gemini-3.8-flash-high      ('agy models' lists what you can reach)
 EOF
 }
 
@@ -497,12 +518,13 @@ EOF
 
 # =============================================================== UP ==========
 cmd_up() {
-  local workspace="" safe=0 deep=0
+  local workspace="" safe=0 deep=0 model_opt=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -w|--workspace) workspace="$2"; shift 2 ;;
       --safe) safe=1; shift ;;
       --deep) deep=1; shift ;;
+      --model) model_opt="$2"; shift 2 ;;
       *) fail "Unknown option for up: $1" ;;
     esac
   done
@@ -545,7 +567,25 @@ cmd_up() {
   say "claude bin   : $claude_exe   (validator)"
 
   local launch="$workspace/.relay/launch"
-  local agy_model="gemini-3.7-flash-high"
+
+  # Model selection for the three agy panes. Antigravity ships a new Gemini tier every
+  # few weeks, so this is a variable with a default rather than three literals: the only
+  # edit an upgrade should ever need is the string below.
+  #
+  #   --model <id>                              this run, all agy panes
+  #   RELAY_AGY_MODEL=<id>                      persistent default, all agy panes
+  #   RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}  per role, wins over both
+  #
+  # Run `agy models` to see what your account can actually reach. Per-role overrides
+  # exist because the three seats do not want the same thing: the mutator is never on
+  # the critical path and its loop is mechanical (edit a line, re-run the suite, record
+  # what went red), so RELAY_AGY_MODEL_MUTATOR=gemini-3.8-flash-medium buys more mutants
+  # inside its 25-minute budget at no cost to the verdict. The executor and the scout
+  # both do reasoning the verdict depends on; leave those on the high tier.
+  local agy_model="${model_opt:-${RELAY_AGY_MODEL:-gemini-3.8-flash-high}}"
+  local agy_model_exec="${RELAY_AGY_MODEL_EXECUTOR:-$agy_model}"
+  local agy_model_scout="${RELAY_AGY_MODEL_SCOUT:-$agy_model}"
+  local agy_model_mut="${RELAY_AGY_MODEL_MUTATOR:-$agy_model}"
   local exec_flags="--dangerously-skip-permissions"
   local claude_mode="bypassPermissions"
   if [ "$safe" -eq 1 ]; then
@@ -579,7 +619,7 @@ cmd_up() {
   # .relay/mutants/<task>/, so it can still be grinding on task 007 while the
   # executor edits the real tree for task 008.
   local l_exec l_val l_scout l_mut l_bus
-  l_exec="$(write_launcher executor  "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$exec_boot")")"
+  l_exec="$(write_launcher executor  "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_exec" "$exec_flags" "$exec_boot")")"
   # house-style goes in the SYSTEM prompt, not the boot message. A charter read as the
   # reply to a first user turn is a fact in a transcript: it competes with Claude Code's
   # own stock system prompt and decays as the conversation grows. An appended system
@@ -587,8 +627,8 @@ cmd_up() {
   # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and long;
   # this file is the law, and short.
   l_val="$(write_launcher  validator "$(printf 'exec %q --model sonnet --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
-  l_scout="$(write_launcher scout    "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$scout_boot")")"
-  l_mut="$(write_launcher  mutator   "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model" "$exec_flags" "$mut_boot")")"
+  l_scout="$(write_launcher scout    "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_scout" "$exec_flags" "$scout_boot")")"
+  l_mut="$(write_launcher  mutator   "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_mut" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
 
   say "Building session '$SESSION' in $workspace"
@@ -651,11 +691,11 @@ cmd_up() {
   fi
 
   say "Relay up - all four agents answered."
-  say "  executor  (agy / $agy_model) -> $EXECUTOR_PANE"
-  say "  validator (claude sonnet)                -> $VALIDATOR_PANE"
-  say "  scout     (agy / $agy_model) -> $SCOUT_PANE"
-  say "  mutator   (agy / $agy_model) -> $MUTATOR_PANE"
-  say "  bus watch                                -> $BUS_PANE"
+  say "  executor  : agy / $agy_model_exec  -> $EXECUTOR_PANE"
+  say "  validator : claude sonnet -> $VALIDATOR_PANE"
+  say "  scout     : agy / $agy_model_scout  -> $SCOUT_PANE"
+  say "  mutator   : agy / $agy_model_mut  -> $MUTATOR_PANE"
+  say "  bus watch : -> $BUS_PANE"
   say "Attach with: tmux attach -t $SESSION"
 }
 
@@ -879,9 +919,13 @@ cmd_send() {
 
 # ========================================================= DISPATCH ==========
 dispatch_message() {
-  local agent="$1" rel="$2" base="$3"
+  local agent="$1" rel="$2" base="$3" phase="${4:-}"
+  [ "$phase" = "prebrief" ] && {
+    printf 'PRE-BRIEF for: %s . The executor is still working - there is no code to look at yet and that is the point. Follow the pre-brief section of your contract in .relay/scout.md: read ONLY the task file, do not read the diff, the source, the tests or any result file, and do not run the verification commands. From the requirements alone, write your probe files into .relay/probe/%s/ and the expectation table into .relay/probe/%s/PREBRIEF.md , quoting for each requirement the clause its expected value comes from. Do NOT run the probes and do NOT write an evidence file. Say SCOUT PREBRIEF DONE %s when the table is written.' "$rel" "$base" "$base" "$base"
+    return
+  }
   case "$agent" in
-    scout)     printf 'Gather evidence for: %s . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Do NOT do mutation testing; the mutator pane owns that. Observations only, no verdict.' "$rel" ;;
+    scout)     printf 'Gather evidence for: %s . Follow your contract in .relay/scout.md - re-run the verification yourself, probe the edge cases the task implies, audit the tests for real assertions, and write the compacted evidence file named in the task. Run the pre-brief probes already in .relay/probe/%s/ first and unmodified, and mark each row of your Probes run table pre or post. Do NOT do mutation testing; the mutator pane owns that. Observations only, no verdict.' "$rel" "$base" ;;
     mutator)   printf 'Mutation pass for: %s . Follow your contract in .relay/mutator.md . Your isolated snapshot of the workspace is at .relay/mutants/%s/ - do all mutation work in there and never in the live tree. Write findings to .relay/mutation/%s.md . Surviving mutants only, no verdict.' "$rel" "$base" "$base" ;;
     validator) printf 'Grade this task: %s . Follow your contract in .relay/validator.md - read the task, the executor result, the scout evidence, and the mutation report at .relay/mutation/%s.md if it exists, then write your verdict to the report path named in the task.' "$rel" "$base" ;;
     *)         printf 'New task on the bus: %s . Read it, execute it per your contract in .relay/executor.md, and write your completion report to the results path named in the task.' "$rel" ;;
@@ -893,7 +937,7 @@ dispatch_message() {
 # silently, so without this the dispatch "succeeds" and the caller waits out a
 # full timeout on an agent that died hours ago.
 do_dispatch() {
-  local agent="$1" abs="$2" note="${3:-}" rel base target cleared f msg
+  local agent="$1" abs="$2" note="${3:-}" phase="${4:-}" rel base target cleared f msg
   rel="${abs#"$WORKSPACE"/}"
   base="$(basename "$abs" .md)"
   target="$(pane_for "$agent")"
@@ -901,19 +945,20 @@ do_dispatch() {
   [ -n "$cleared" ] && say "Cleared $cleared in $agent before dispatching"
   f="$(pane_fault "$target")"
   if [ -n "$f" ]; then printf '%s' "$f"; return 1; fi
-  msg="$(dispatch_message "$agent" "$rel" "$base")"
+  msg="$(dispatch_message "$agent" "$rel" "$base" "$phase")"
   [ -n "$note" ] && msg="$msg $note"
   send_line "$target" "$msg"
-  say "Dispatched $rel -> $agent"
+  say "Dispatched $rel -> $agent${phase:+ ($phase)}"
   return 0
 }
 
 cmd_dispatch() {
-  local agent="executor" task=""
+  local agent="executor" task="" phase=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -a|--agent) agent="$2"; shift 2 ;;
       -T|--task)  task="$2";  shift 2 ;;
+      -p|--phase) phase="$2"; shift 2 ;;
       *) fail "Unknown option for dispatch: $1" ;;
     esac
   done
@@ -922,7 +967,7 @@ cmd_dispatch() {
   local abs; abs="$(bus_path "$task")"
   [ -f "$abs" ] || fail "Task file not found: $abs"
   local f
-  if ! f="$(do_dispatch "$agent" "$abs")"; then
+  if ! f="$(do_dispatch "$agent" "$abs" "" "$phase")"; then
     printf '\033[31m[relay] REFUSING TO DISPATCH - %s has faulted: %s\033[0m\n' "$agent" "$f"
     printf '\033[33m        Recover with: relay.sh restart -a %s\033[0m\n' "$agent"
     exit 3
@@ -1101,7 +1146,7 @@ ORPHANED=""
 
 run_log() {
   printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >> "$RUN_LOG"
-  printf '\033[36m[auto]\033[0m %s\n' "$*"
+  printf '\033[36m[auto]\033[0m %s\n' "$*" >&2   # stderr: see the note on say()
 }
 
 stop_requested() { [ -f "$WORKSPACE/.relay/STOP" ]; }
@@ -1121,6 +1166,73 @@ pending_tasks() {
 }
 
 # PASS-WITH-CONCERNS must be tested before PASS or it grades as a clean pass.
+# --- pipelining -------------------------------------------------------------
+#
+# The executor and the validator never want the same thing at the same time: by the
+# time the validator is grading task N, the executor has been idle since N's result
+# landed and stays idle for the whole grade. Starting it on N+1 there costs nothing
+# and takes a whole executor phase - the longest one in the cycle - off the wall clock
+# for every task after the first.
+#
+# It is opt-in because it trades a real guarantee away. Serially, exactly one task's
+# changes are in the tree at any moment; pipelined, the validator may be grading N
+# while N+1's edits are landing around it. The scope guard below is what keeps that
+# tolerable, and the validator is told about it in its dispatch note.
+
+# The paths named on the "In:" line(s) of a task's Scope section. Empty output means
+# "could not tell", which the caller must treat as "do not pipeline" - an unparseable
+# scope is the case where overlap is most likely, not least.
+task_scope_in() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  awk '
+    /^##[[:space:]]/          { inscope = ($0 ~ /^##[[:space:]]*Scope/) ; next }
+    inscope && /^[[:space:]]*[-*][[:space:]]*[Ii]n:/ {
+      sub(/^[[:space:]]*[-*][[:space:]]*[Ii]n:[[:space:]]*/, "")
+      gsub(/[,;]+/, " ")
+      gsub(/[`"'"'"']/, "")
+      print
+    }
+  ' "$f" | tr ' ' '\n' | sed 's,^\./,,; s,/*$,,' | grep -v '^$' | sort -u || true
+  # `|| true` and the bare return are load-bearing under `set -euo pipefail`: a task
+  # with no Scope section makes grep exit 1, which pipefail turns into a failing
+  # pipeline, which errexit turns into a dead run - for the entirely normal case this
+  # function exists to report. Empty output IS the answer here.
+  return 0
+}
+
+# Conservative: any shared path, or either path containing the other as a directory
+# prefix, counts as an overlap. So does an unparseable scope on either side.
+scopes_intersect() {
+  local a b pa pb hit=0
+  a="$(task_scope_in "$1")"; b="$(task_scope_in "$2")"
+  [ -n "$(printf '%s' "$a" | tr -d '[:space:]')" ] || return 0
+  [ -n "$(printf '%s' "$b" | tr -d '[:space:]')" ] || return 0
+  # Globbing off for the split: a scope of `*` or `src/*` would otherwise expand
+  # against the current directory and the wildcard - the very entry that means "all
+  # of it, do not pipeline" - would vanish before it could be matched.
+  set -f
+  for pa in $a; do
+    case "$pa" in .|..|'*'|'**'|*'*'*) hit=1; break ;; esac
+    for pb in $b; do
+      case "$pb" in .|..|'*'|'**'|*'*'*) hit=1; break ;; esac
+      [ "$pa" = "$pb" ] && { hit=1; break; }
+      case "$pa" in "$pb"/*) hit=1; break ;; esac
+      case "$pb" in "$pa"/*) hit=1; break ;; esac
+    done
+    [ "$hit" -eq 1 ] && break
+  done
+  set +f
+  [ "$hit" -eq 1 ] && return 0
+  return 1
+}
+
+# The second pending task, or nothing. Same ordering pending_tasks uses, so this is
+# genuinely the one the next cycle will pick up.
+next_pending_task() {
+  pending_tasks | sed -n 2p
+}
+
 get_verdict() {
   local r="$1" head
   [ -f "$r" ] || { printf 'MISSING'; return; }
@@ -1161,8 +1273,34 @@ recycle_if_old() {
   return 0
 }
 
-budget_left() { eval "printf '%s' \"\${BUDGET_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')}\""; }
-budget_dec()  { local k; k="BUDGET_$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]')"; eval "$k=\$(( $k - 1 ))"; }
+# Restart budgets and the orphan record live in files rather than shell variables,
+# because the code that writes them does not run in this shell. invoke_phase and
+# wait_artifact are both called as `r="$(...)"`, and a command substitution is a
+# SUBSHELL: every variable they assign is discarded when the substitution ends.
+#
+# Two things were silently broken by that. `budget_dec` decremented a copy, so the
+# "restart budget spent - giving up on that lane" branch could never fire and a
+# permanently broken agent was restarted up to four times per phase, forever, instead
+# of four times per run. And ORPHANED was appended in the subshell, so the "work left
+# in flight" warning - the whole point of recording that an interrupted agent is still
+# writing - was always empty. The PowerShell port has neither bug: its functions share
+# one scope and $script: state. Files are the smallest thing that closes the gap here.
+budget_file() { printf '%s/.relay/health/.budget-%s' "$WORKSPACE" "$1"; }
+budget_set()  {
+  mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true
+  printf '%s' "$2" > "$(budget_file "$1")"
+}
+budget_left() {
+  local f v; f="$(budget_file "$1")"; v=""
+  [ -f "$f" ] && v="$(cat "$f" 2>/dev/null)"
+  case "$v" in ''|*[!0-9]*) v=0 ;; esac
+  printf '%s' "$v"
+}
+budget_dec()  { local l; l="$(budget_left "$1")"; [ "$l" -gt 0 ] && budget_set "$1" "$(( l - 1 ))"; return 0; }
+
+orphan_file()   { printf '%s/.relay/health/.orphaned' "$WORKSPACE"; }
+orphan_record() { mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true; printf '%s\n' "$1" >> "$(orphan_file)"; }
+orphan_all()    { [ -f "$(orphan_file)" ] && cat "$(orphan_file)" 2>/dev/null || true; }
 
 assert_agent_ready() {
   local n="$1" trouble left
@@ -1183,13 +1321,49 @@ assert_agent_ready() {
   return 0
 }
 
+# Has anything at all been written in the workspace since the marker was last
+# touched? This is the only honest answer to "is it still working?" - a wedged agy
+# pane keeps drawing its spinner, so pane_busy answers "yes" while nothing is being
+# produced. Observed 2026-08-30 on the PowerShell port: an executor sat busy from
+# 15:39 to 18:00, wrote zero files, and the timeout branch DOUBLED its own wait on
+# the strength of that spinner. Two stalls that day cost 4h15m and produced nothing.
+#
+# Excluded on purpose:
+#   .git            index/lock churn happens without an agent doing anything
+#   .relay/logs     autopilot writes its OWN log there, so including it would make
+#                   every stall look like progress - the bug this check exists to catch
+#   .relay/health   keepalive nonce files, written by the panes that are NOT working
+#   .relay/mutants  the mutation lane runs in parallel; its writes say nothing about
+#                   the agent actually being waited on
+# Heavy vendor trees are skipped for speed, not correctness.
+#
+# `find -newer <marker>` rather than a newest-mtime scan: BSD find on macOS has no
+# -printf, and this needs no sort - the first hit is the whole answer.
+progress_marker() { printf '%s/.relay/health/.progress-mark' "$WORKSPACE"; }
+
+progress_seen() {
+  local m; m="$(progress_marker)"
+  [ -f "$m" ] || return 0
+  [ -n "$(find "$WORKSPACE" \
+      \( -path "$WORKSPACE/.git" \
+      -o -path "$WORKSPACE/.relay/logs" \
+      -o -path "$WORKSPACE/.relay/health" \
+      -o -path "$WORKSPACE/.relay/mutants" \
+      -o -name node_modules -o -name .venv -o -name venv \) -prune \
+      -o -type f -newer "$m" -print 2>/dev/null | head -1)" ]
+}
+
 # Block until an artifact lands, watching the working agent for faults and
-# keeping the other agy panes warm. Prints ok|stopped|timeout|fault:<reason>.
+# keeping the other agy panes warm.
+# Prints ok|stopped|timeout|stalled|fault:<reason>.
 wait_artifact() {
-  local path="$1" timeout="$2" agent="$3" idle="$4"
-  local deadline last_touch last_health now trouble ia
+  local path="$1" timeout="$2" agent="$3" idle="$4" stall_min="${5:-10}"
+  local deadline last_touch last_health last_probe last_progress now trouble ia
   deadline=$(( $(date +%s) + timeout ))
   last_touch="$(date +%s)"; last_health="$last_touch"
+  last_probe="$last_touch"; last_progress="$last_touch"
+  mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true
+  : > "$(progress_marker)" 2>/dev/null || true
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if [ -f "$path" ]; then sleep 0.9; printf 'ok'; return 0; fi
 
@@ -1202,8 +1376,7 @@ wait_artifact() {
       local leaf; leaf="$(basename "$path")"
       run_log "STOP received while waiting on $agent for $leaf"
       run_log "  -> $agent is STILL WORKING and may write $leaf after this run exits"
-      ORPHANED="$ORPHANED
-- $agent was mid-task on \`$leaf\` - check whether it landed, and whether it also wrote new task files"
+      orphan_record "- $agent was mid-task on \`$leaf\` - check whether it landed, and whether it also wrote new task files"
       printf 'stopped'; return 0
     fi
 
@@ -1214,9 +1387,23 @@ wait_artifact() {
       trouble="$(agent_trouble "$agent")"
       if [ -n "$trouble" ]; then printf 'fault:%s' "$trouble"; return 0; fi
     fi
+    # Busy is not progress. Ask the filesystem, not the screen.
+    if [ "$stall_min" -gt 0 ] && [ $(( now - last_probe )) -ge 60 ]; then
+      last_probe="$now"
+      if progress_seen; then
+        last_progress="$now"
+        : > "$(progress_marker)" 2>/dev/null || true
+      elif [ $(( now - last_progress )) -ge $(( stall_min * 60 )) ]; then
+        run_log "$agent has written nothing for ${stall_min}m - stalled, not slow"
+        printf 'stalled'; return 0
+      fi
+    fi
+
     if [ $(( now - last_touch )) -ge 720 ]; then
       last_touch="$now"
       for ia in $idle; do keepalive "$ia"; done
+      # keepalive writes health nonce files; do not let that read as progress.
+      : > "$(progress_marker)" 2>/dev/null || true
     fi
     sleep 5
   done
@@ -1226,7 +1413,15 @@ wait_artifact() {
 # One dispatch-and-wait phase, with the retry that used to require a human.
 invoke_phase() {
   local agent="$1" task="$2" artifact="$3" timeout="$4" idle="$5" note="${6:-}"
-  local attempt r r2
+  local attempt r r2 stall=10
+  # Filesystem progress is a valid liveness signal only for a seat that writes as it
+  # works. The agy panes do - source edits, probe files, snapshots - so ten minutes of
+  # nothing means wedged. The validator does not: its contract is judgment, it is told
+  # explicitly not to redo the scout's shell work, and its whole output is one file
+  # written at the end. Twelve quiet minutes there is a pane reading, and restarting it
+  # would burn the only quota this relay spends and start the grade over from zero.
+  # That seat stays covered by the fault check and the timeout, as it was before.
+  [ "$agent" = "validator" ] && stall=0
   for attempt in 1 2; do
     assert_agent_ready "$agent" || { printf 'agent-down'; return 0; }
     if ! do_dispatch "$agent" "$task" "$note" >/dev/null; then
@@ -1234,22 +1429,43 @@ invoke_phase() {
       assert_agent_ready "$agent" || { printf 'agent-down'; return 0; }
       continue
     fi
-    r="$(wait_artifact "$artifact" "$timeout" "$agent" "$idle")"
+    r="$(wait_artifact "$artifact" "$timeout" "$agent" "$idle" "$stall")"
     case "$r" in
       ok)      printf 'ok'; return 0 ;;
       stopped) printf 'stopped'; return 0 ;;
     esac
     run_log "$agent attempt ${attempt}: $r"
 
+    # A stalled pane is wedged, not thinking. It still answers a liveness probe and
+    # still looks busy, so assert_agent_ready below will not touch it - restart it
+    # here, or attempt 2 re-dispatches into the same wedge and burns the timeout again.
+    if [ "$r" = "stalled" ]; then
+      local left; left="$(budget_left "$agent")"
+      if [ "$left" -le 0 ]; then
+        run_log "$agent stalled and its restart budget is spent - giving up on that lane"
+        printf 'agent-down'; return 0
+      fi
+      budget_dec "$agent"
+      run_log "restarting stalled $agent ($left restart(s) were left)"
+      restart_agents "$agent" || true
+      if [ -n "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
+        run_log "$agent did not come back cleanly after a stall"
+        printf 'agent-down'; return 0
+      fi
+      continue
+    fi
+
     # A timeout on an agent visibly still working is a bad guess at how long the
     # work takes, not a failure. Extend once rather than restarting the pane and
-    # throwing away everything it has done.
+    # throwing away everything it has done. The stall check above is what makes
+    # this safe: reaching here means files were still being written.
     if [ "$r" = "timeout" ] && pane_busy "$(pane_for "$agent")"; then
       run_log "$agent is still working - extending the wait once"
-      r2="$(wait_artifact "$artifact" "$timeout" "$agent" "$idle")"
+      r2="$(wait_artifact "$artifact" "$timeout" "$agent" "$idle" "$stall")"
       case "$r2" in
         ok)      printf 'ok'; return 0 ;;
         stopped) printf 'stopped'; return 0 ;;
+        stalled) continue ;;
       esac
       run_log "$agent after extension: $r2"
     fi
@@ -1258,10 +1474,49 @@ invoke_phase() {
   printf 'failed'
 }
 
-# The validator writes its report and its follow-up task file as separate
-# actions, and the report - which every wait keys on - can land first. Never
-# conclude "no follow-up was written" from a scan taken the moment a report
-# appears: give the writer a settle window and re-scan.
+# A phase whose dispatch already went out - the pipelined executor. Waits for the
+# artifact without dispatching again, because a second dispatch into a pane that is
+# mid-turn is swallowed and the wait then times out against an agent doing the work
+# correctly. Anything other than a clean landing falls back to a fresh invoke_phase,
+# which re-dispatches, so a prefetch that went wrong costs a retry rather than the task.
+await_phase() {
+  local agent="$1" task="$2" artifact="$3" timeout="$4" idle="$5" r stall=10
+  [ "$agent" = "validator" ] && stall=0
+  r="$(wait_artifact "$artifact" "$timeout" "$agent" "$idle" "$stall")"
+  case "$r" in
+    ok)      printf 'ok'; return 0 ;;
+    stopped) printf 'stopped'; return 0 ;;
+  esac
+  run_log "prefetched $agent did not land ($r) - falling back to a fresh dispatch"
+  invoke_phase "$agent" "$task" "$artifact" "$timeout" "$idle"
+}
+
+# The validator names its follow-up on a NEXT-TASK: line in the report header, which
+# is both faster and less ambiguous than watching the tasks directory: a scan cannot
+# tell the validator's follow-up apart from a task a human dropped in mid-run, and it
+# spends its full settle window on every FAIL that legitimately has no follow-up.
+# Returns the relative path, or fails if there is no usable line.
+next_task_from_report() {
+  local r="$1" line rel i=0
+  [ -f "$r" ] || return 1
+  line="$(head -n 8 "$r" | tr -d '\r' | sed -n 's/^[[:space:]]*NEXT-TASK:[[:space:]]*//p' | head -1)"
+  rel="$(printf '%s' "$line" | sed 's/[[:space:]]*$//')"
+  [ -n "$rel" ] || return 1
+  case "$rel" in none|None|NONE|-|n/a|N/A) return 1 ;; esac
+  # The charter has it write the task before the report, so the file should already
+  # be there; allow a few seconds anyway rather than falling back over a flush lag.
+  while [ "$i" -lt 4 ]; do
+    [ -f "$(bus_path "$rel")" ] && { printf '%s' "$rel"; return 0; }
+    i=$(( i + 1 )); sleep 2
+  done
+  run_log "report names NEXT-TASK: $rel but no such file exists - falling back to a directory scan"
+  return 1
+}
+
+# Fallback for a report with no NEXT-TASK: line. The validator writes its report and
+# its follow-up task file as separate actions, and the report - which every wait keys
+# on - can land first. Never conclude "no follow-up was written" from a scan taken the
+# moment a report appears: give the writer a settle window and re-scan.
 wait_for_new_tasks() {
   local before="$1" timeout="${2:-45}" deadline after new
   deadline=$(( $(date +%s) + timeout ))
@@ -1277,14 +1532,17 @@ wait_for_new_tasks() {
 }
 
 cmd_autopilot() {
-  local budget_min=480 max_cycles=24 max_fails=3 drain_min=20 no_mutation=0
+  local budget_min=480 max_cycles=24 max_fails=3 drain_min=20 no_mutation=0 no_prebrief=0
+  local pipeline=0
   while [ $# -gt 0 ]; do
     case "$1" in
+      --pipeline)           pipeline=1;      shift ;;
       --budget-min)         budget_min="$2"; shift 2 ;;
       --max-cycles)         max_cycles="$2"; shift 2 ;;
       --max-fails)          max_fails="$2";  shift 2 ;;
       --mutation-drain-min) drain_min="$2";  shift 2 ;;
       --no-mutation)        no_mutation=1;   shift ;;
+      --no-prebrief)        no_prebrief=1;   shift ;;
       *) fail "Unknown option for autopilot: $1" ;;
     esac
   done
@@ -1299,7 +1557,23 @@ cmd_autopilot() {
   # A stale STOP from a previous run would end this one before it started.
   if stop_requested; then rm -f "$WORKSPACE/.relay/STOP"; run_log "cleared a stale .relay/STOP"; fi
 
-  BUDGET_EXECUTOR=4 BUDGET_SCOUT=4 BUDGET_MUTATOR=3 BUDGET_VALIDATOR=2
+  budget_set executor 4; budget_set scout 4; budget_set mutator 3; budget_set validator 2
+  rm -f "$(orphan_file)"
+
+  # The scout pane is idle for the whole executor phase - the longest phase in the
+  # cycle - and the one thing it can usefully do without the code is decide what
+  # correct means. So it does that there: probes derived from the task file alone,
+  # written before any implementation exists to copy an expected value from. Buys
+  # back the probe-design time AND closes the failure recorded in all four of the
+  # first cycles, where a probe written after reading the code asserted what the code
+  # did. See the pre-brief section of the scout charter.
+  local prebrief_on=1
+  [ "$no_prebrief" -eq 1 ] && { prebrief_on=0; run_log "spec-first pre-brief disabled by --no-prebrief"; }
+
+  # PREFETCHED holds the base name of a task the executor was started on early, while
+  # the validator was still grading the one before it. At most one is ever outstanding.
+  local PREFETCHED=""
+  [ "$pipeline" -eq 1 ] && run_log "pipelining ON - the executor starts the next task while the validator grades this one"
 
   local mutation_on=1
   [ "$no_mutation" -eq 1 ] && { mutation_on=0; run_log "mutation lane disabled by --no-mutation"; }
@@ -1362,9 +1636,10 @@ cmd_autopilot() {
       next_id="$(printf '%03d' "$(( $(ls -1 "$WORKSPACE/.relay/tasks/" 2>/dev/null | sed -n 's/^0*\([0-9][0-9]*\).*/\1/p' | sort -n | tail -1) + 1 ))")"
       local tasks_before; tasks_before="$(cd "$WORKSPACE/.relay/tasks" && ls -1 ./*.md 2>/dev/null | sort || true)"
 
-      send_line "$(pane_for validator)" "Mutation sweep. These mutation reports have not been folded into any verdict yet:$list . Read each one. For every surviving mutant, decide whether it is a real gap in the tests or noise. Write a short summary to .relay/reports/$sweep_name.md , first line VERDICT: PASS or VERDICT: FAIL - PASS if nothing is worth acting on. For each real gap that IS worth closing, also write a new task file to .relay/tasks/ using the standard task format (Objective, Scope, Requirements, Verification, Artifacts), starting at id $next_id and incrementing. Write no task files if nothing warrants one."
+      send_line "$(pane_for validator)" "Mutation sweep. These mutation reports have not been folded into any verdict yet:$list . Read each one. For every surviving mutant, decide whether it is a real gap in the tests or noise. Write a short summary to .relay/reports/$sweep_name.md , first line VERDICT: PASS or VERDICT: FAIL - PASS if nothing is worth acting on - and second line NEXT-TASK: followed by the path of the first task file you wrote, or none. For each real gap that IS worth closing, also write a new task file to .relay/tasks/ using the standard task format (Objective, Scope, Requirements, Verification, Artifacts), starting at id $next_id and incrementing. Write the task files before the summary. Write no task files if nothing warrants one."
 
-      local sr; sr="$(wait_artifact "$sweep_path" 1800 validator "scout executor")"
+      local sr; sr="$(wait_artifact "$sweep_path" 1800 validator "scout executor" 0)"
+      load_state   # keepalive may have recycled an idle agy pane during that wait
       run_log "mutation sweep: $sr"
 
       # Mark the inputs reviewed ONLY if the sweep actually produced its summary. This
@@ -1382,7 +1657,12 @@ cmd_autopilot() {
 | mutation sweep | - | $sr |"
 
       if [ "$sr" = "ok" ]; then
-        local newt; newt="$(wait_for_new_tasks "$tasks_before" 45)"
+        local newt; newt="$(next_task_from_report "$sweep_path" || true)"
+        if [ -n "$newt" ]; then
+          run_log "sweep named its follow-up: $newt"
+        else
+          newt="$(wait_for_new_tasks "$tasks_before" 45)"
+        fi
         if [ -n "$(printf '%s' "$newt" | tr -d '[:space:]')" ]; then
           run_log "sweep dispatched:$(printf '%s' "$newt" | tr '\n' ' ')"
         else
@@ -1402,7 +1682,14 @@ cmd_autopilot() {
     # Recycle before the cycle rather than during it: this is the one moment when
     # no agent is mid-task, so a restart costs nothing but the boot time.
     local a
-    for a in executor scout mutator; do recycle_if_old "$a" 3; done
+    for a in executor scout mutator; do
+      # A prefetched executor is mid-task even between turns, and recycle_if_old only
+      # checks pane_busy - which reads false in the gaps. Restarting there throws away
+      # a task's work with nothing to show that it happened.
+      [ "$a" = "executor" ] && [ -n "$PREFETCHED" ] && continue
+      [ "$a" = "scout" ] && [ -n "$PREFETCHED" ] && continue
+      recycle_if_old "$a" 3
+    done
 
     local result_p evidence_p report_p mutation_p
     result_p="$(bus_artifact results  "$base")"
@@ -1414,11 +1701,58 @@ cmd_autopilot() {
     # resumable. Without this the executor is dispatched, the stale result file is
     # seen instantly, and the cycle sails on to scout a result never regenerated -
     # looking exactly like a fast success.
+    local prebrief_p="$WORKSPACE/.relay/probe/$base/PREBRIEF.md"
+    local was_prefetched=0
+    [ -n "$PREFETCHED" ] && [ "$PREFETCHED" = "$base" ] && { was_prefetched=1; PREFETCHED=""; }
+
     local r
     if [ -f "$result_p" ]; then
-      run_log "$base already has a result - skipping the executor (resuming)"
+      if [ "$was_prefetched" -eq 1 ]; then
+        run_log "$base was prefetched during the previous grade and is already done"
+      else
+        run_log "$base already has a result - skipping the executor (resuming)"
+      fi
+    elif [ "$was_prefetched" -eq 1 ]; then
+      # Dispatched a cycle early; the pane is still on it. Wait, do not dispatch again.
+      run_log "$base was prefetched and is still running - waiting rather than re-dispatching"
+      r="$(await_phase executor "$task" "$result_p" 1800 "scout mutator")"
+      load_state
+      [ "$r" = "stopped" ] && { stop_reason="stopped by .relay/STOP"; break; }
+      if [ "$r" != "ok" ]; then
+        run_log "executor did not produce a result for $base ($r) - stopping"
+        summary="$summary
+| $base | executor $r | run halted |"
+        stop_reason="executor could not complete $base"; break
+      fi
     else
+      # A prefetch for a DIFFERENT task may still be in flight. By construction that
+      # should not happen - a validator follow-up always takes the next free id, so it
+      # sorts after anything already prefetched - but a task dropped in by hand with a
+      # lower id would do it, and dispatching into a busy agy pane loses the line
+      # silently and then times out against an agent that was working correctly.
+      if [ -n "$PREFETCHED" ]; then
+        run_log "executor is still on the prefetched $PREFETCHED - waiting before dispatching $base"
+        local pfd=$(( $(date +%s) + 1800 ))
+        while [ "$(date +%s)" -lt "$pfd" ] &&
+              [ ! -f "$(bus_artifact results "$PREFETCHED")" ] &&
+              pane_busy "$(pane_for executor)"; do
+          stop_requested && break
+          sleep 10
+        done
+      fi
+
+      # Dispatched first and never waited on: the executor phase is the budget it
+      # runs inside. If it does not finish in time the scout simply probes the old
+      # way, which its charter covers.
+      if [ "$prebrief_on" -eq 1 ] && [ ! -f "$prebrief_p" ]; then
+        mkdir -p "$WORKSPACE/.relay/probe/$base" 2>/dev/null || true
+        if assert_agent_ready scout; then
+          do_dispatch scout "$task" "" prebrief >/dev/null ||
+            run_log "scout refused the pre-brief - continuing without one"
+        fi
+      fi
       r="$(invoke_phase executor "$task" "$result_p" 1800 "scout mutator")"
+      load_state   # a restart inside that subshell renumbered panes on disk only
       [ "$r" = "stopped" ] && { stop_reason="stopped by .relay/STOP"; break; }
       if [ "$r" != "ok" ]; then
         run_log "executor did not produce a result for $base ($r) - stopping"
@@ -1445,7 +1779,23 @@ cmd_autopilot() {
     if [ -f "$evidence_p" ]; then
       run_log "$base already has scout evidence - skipping the scout (resuming)"
     else
+      # One pane does one thing at a time, and a line typed into a busy agy pane is
+      # swallowed. If the pre-brief is still running, wait for it - briefly - rather
+      # than dispatching the evidence pass into a pane that will never read it.
+      if [ "$prebrief_on" -eq 1 ] && [ ! -f "$prebrief_p" ] && pane_busy "$(pane_for scout)"; then
+        run_log "waiting up to 5m for the scout's pre-brief to land before the evidence pass"
+        local pdl=$(( $(date +%s) + 300 ))
+        while [ "$(date +%s)" -lt "$pdl" ] && [ ! -f "$prebrief_p" ] &&
+              pane_busy "$(pane_for scout)"; do
+          stop_requested && break
+          sleep 5
+        done
+      fi
+      if [ "$prebrief_on" -eq 1 ] && [ ! -f "$prebrief_p" ]; then
+        run_log "no pre-brief for $base - the scout will probe post-hoc"
+      fi
       r="$(invoke_phase scout "$task" "$evidence_p" 1200 "mutator")"
+      load_state
       [ "$r" = "stopped" ] && { stop_reason="stopped by .relay/STOP"; break; }
       if [ "$r" != "ok" ]; then
         run_log "NO SCOUT EVIDENCE for $base ($r) - validating degraded"
@@ -1459,7 +1809,49 @@ cmd_autopilot() {
     fi
     local tasks_before2; tasks_before2="$(cd "$WORKSPACE/.relay/tasks" && ls -1 ./*.md 2>/dev/null | sort || true)"
 
-    r="$(invoke_phase validator "$task" "$report_p" 1800 "scout mutator executor" "$note")"
+    # --- prefetch: start the next task while the validator grades this one -----
+    #
+    # This is the one moment in the cycle when the executor and the scout are both
+    # idle and will stay idle for a long time. Dispatching here and never waiting
+    # takes a whole executor phase off the wall clock for every task after the first.
+    # The dispatch is fire-and-forget; the next cycle picks the result up through the
+    # same artifact-exists check that makes an interrupted run resumable.
+    local pipe_note=""
+    if [ "$pipeline" -eq 1 ] && [ -z "$PREFETCHED" ]; then
+      local nxt nbase
+      nxt="$(next_pending_task)"
+      if [ -z "$nxt" ]; then
+        :   # nothing queued behind this one
+      elif scopes_intersect "$task" "$nxt"; then
+        run_log "not prefetching $(basename "$nxt" .md) - its scope overlaps $base (or one of them does not state a parseable scope)"
+      else
+        nbase="$(basename "$nxt" .md)"
+        if assert_agent_ready executor; then
+          if do_dispatch executor "$nxt" >/dev/null; then
+            PREFETCHED="$nbase"
+            run_log "prefetching $nbase on the executor while the validator grades $base"
+            pipe_note="Note: pipelining is on, so the executor is concurrently working on a LATER task ($nbase) in this same tree. Its scope does not overlap this one. Grade from the diff the scout captured, not from a fresh git diff, and treat changes to files outside this task's Scope as not yours to judge."
+            if [ "$prebrief_on" -eq 1 ] && [ ! -f "$WORKSPACE/.relay/probe/$nbase/PREBRIEF.md" ]; then
+              mkdir -p "$WORKSPACE/.relay/probe/$nbase" 2>/dev/null || true
+              assert_agent_ready scout &&
+                { do_dispatch scout "$nxt" "" prebrief >/dev/null ||
+                  run_log "scout refused the prefetched pre-brief"; }
+            fi
+          else
+            run_log "executor refused the prefetch - $nbase will run in its own cycle"
+          fi
+        fi
+      fi
+    fi
+
+    [ -n "$pipe_note" ] && note="$note $pipe_note"
+    # Idle-pane keepalive must skip anything the prefetch put to work. keepalive
+    # restarts a pane that does not answer, and an executor mid-task between turns
+    # can miss a probe - which would kill the prefetch to prove it was alive.
+    local val_idle="scout mutator executor"
+    [ -n "$PREFETCHED" ] && val_idle="mutator"
+    r="$(invoke_phase validator "$task" "$report_p" 1800 "$val_idle" "$note")"
+    load_state
     [ "$r" = "stopped" ] && { stop_reason="stopped by .relay/STOP"; break; }
     if [ "$r" != "ok" ]; then
       run_log "validator produced no report for $base ($r) - stopping"
@@ -1478,7 +1870,12 @@ cmd_autopilot() {
       if [ "$consec" -ge "$max_fails" ]; then
         stop_reason="$consec consecutive FAIL verdicts - the work is not converging"; break
       fi
-      local newt2; newt2="$(wait_for_new_tasks "$tasks_before2" 45)"
+      local newt2; newt2="$(next_task_from_report "$report_p" || true)"
+      if [ -n "$newt2" ]; then
+        run_log "validator named its follow-up: $newt2"
+      else
+        newt2="$(wait_for_new_tasks "$tasks_before2" 45)"
+      fi
       if [ -z "$(printf '%s' "$newt2" | tr -d '[:space:]')" ]; then
         stop_reason="$base FAILED and the validator wrote no follow-up task - a human needs to decide the next move"; break
       fi
@@ -1491,7 +1888,14 @@ cmd_autopilot() {
   done
 
   # --- run summary ---------------------------------------------------------
+  # A prefetched executor keeps working after this loop exits, exactly like an agent
+  # interrupted mid-wait, and its result lands with nothing watching for it.
+  if [ -n "$PREFETCHED" ] && [ ! -f "$(bus_artifact results "$PREFETCHED")" ]; then
+    orphan_record "- executor was prefetched onto \`$PREFETCHED\` and is STILL WORKING - its result will land after this run exits"
+  fi
+
   local elapsed=$(( ( $(date +%s) - start_ts ) / 60 ))
+  ORPHANED="$(orphan_all)"
   {
     printf '\n## Summary\n\n'
     printf 'stopped because: %s\n' "$stop_reason"

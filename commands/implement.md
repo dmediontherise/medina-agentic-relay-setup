@@ -1,5 +1,5 @@
 ---
-description: "Execute the latest implementation plan through the relay, unattended (agy executes, agy scouts, agy mutates, Opus validates)"
+description: "Execute the latest implementation plan through the relay, unattended (agy executes, agy scouts, agy mutates, Sonnet validates)"
 ---
 
 Execute an existing implementation plan through the relay. You decompose the plan into

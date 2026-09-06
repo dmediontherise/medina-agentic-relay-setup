@@ -54,6 +54,27 @@ Knobs, all of them ceilings rather than tuning:
 | `-MaxConsecutiveFails` | 3 | consecutive FAILs before it stops rather than grinds |
 | `-MutationDrainMin` | 20 | how long it waits at the end for late mutation reports |
 | `-NoMutation` | off | skip the mutation lane entirely |
+| `-NoPrebrief` | off | skip the scout's spec-first pre-brief pass |
+| `-Pipeline` | off | start the next task on the executor while the validator grades this one |
+
+`-NoPrebrief` turns off the one step that keeps the scout's probes honest — they get
+written from the task file before the executor's code exists, which is what stops them
+asserting whatever the implementation happens to do. Leave it on unless the user is
+debugging the scout lane itself.
+
+`-Pipeline` is the one flag here that is a speed/safety trade rather than a ceiling, so
+decide it deliberately. It takes a whole executor phase — the longest phase in the cycle —
+off the wall clock for every task after the first, by starting task N+1 while the
+validator is still grading N. What it gives up is the guarantee that exactly one task's
+changes are in the tree at a time.
+
+Autopilot refuses the prefetch whenever the two tasks' `Scope` → `In:` paths overlap, or
+when either task does not state a parseable one, and it tells the validator in its
+dispatch that a later task is being written around it. That makes it safe in proportion to
+how well your task files state their scope — so **turn it on for a queue of genuinely
+independent tasks with real `In:` lines, and leave it off for a queue of follow-ups that
+all touch the same files.** It buys nothing in the latter case anyway: every prefetch would
+be refused by the scope guard.
 
 Pass the ones the user asked for and leave the rest alone. Never raise a ceiling to get
 past a stop — a run that hit `-MaxConsecutiveFails` is telling you the work is not
