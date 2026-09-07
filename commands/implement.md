@@ -82,9 +82,26 @@ Three rules, each from a cycle that went wrong:
   stronger claim than they support. A validator has already failed an Objective for
   promising an outcome its requirements could not deliver.
 
-Where two requirements could conflict on some input, decide it in the task. Under
-autopilot there is nobody to ask, so an undecided conflict becomes the executor's silent
-choice.
+**Resolve ambiguity with the user before writing any task file — not after autopilot fails
+on it.** A task file is read literally and once by three agents that cannot ask what you
+meant; each has its own escalation for ambiguity found mid-cycle (the executor writes
+`BLOCKED`, the scout files an open question, the validator writes `NEEDS HUMAN:`), but
+under autopilot reaching any of them costs a full unattended cycle before the question
+even reaches a human. You're still in the room now — use that.
+
+Keep two things separate:
+
+- **A reading of the plan that changes what "done" means, or a gap the plan never
+  specifies.** That's the user's call, not yours to fill in. Collect every such question
+  across the whole plan and ask them together, in one round, before writing any task
+  file — not one at a time as you reach each phase.
+- **A place the plan is silent where any reasonable choice satisfies its intent** (e.g.
+  ordering two independent steps it never sequences, or how two requirements resolve on
+  an input neither addresses). Decide it yourself and write the decision into the task,
+  so the executor isn't the one guessing either.
+
+Silently picking a reading of the first kind is how a run that validates cleanly still
+ships the wrong thing — the requirements it graded against were never what the user meant.
 
 **Never write per-agent routing instructions into a task file.** If a requirement can only
 be proved by breaking the code — "this test must fail when X is disabled" — write it as a
@@ -93,10 +110,6 @@ points at the mutation lane, the mutator runs it on its snapshot, the validator 
 result; all three know that from their charters. A `## Notes for the scout` block in a task
 file is a sign a charter is wrong, and a task-level patch does not survive to the next
 task — fix the charter in `~/.claude/relay/charters/` instead.
-
-**Do not write a task for work the plan does not specify.** If the plan has a gap, say so
-to the user before launching rather than filling it yourself — that is a decision, and it
-is theirs while they are still in the room.
 
 ## 4. Hand it to autopilot
 
@@ -118,6 +131,10 @@ validator returned it: PASS, PASS-WITH-CONCERNS (naming every concern), or FAIL 
 evidence. Then map the verdicts back onto the plan's phases, since that is the shape the
 user is holding in their head — say which phases are done, which failed, and which never
 ran because the run stopped early.
+
+If the run stopped on `executor is BLOCKED` (see `/relay-auto`'s stop-reason table), that
+phase never reached the scout, mutator, or validator — report the executor's question
+verbatim rather than as a FAIL, since nothing has graded the work yet.
 
 Never soften a FAIL into a summary of what was attempted.
 

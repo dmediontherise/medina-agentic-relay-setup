@@ -22,6 +22,12 @@ reading the verdicts as they land, so a bad spec produces a full unattended run 
 worthless work. If the queue is thin or the requirements are loose, fix them first — that
 is the whole of your remaining leverage.
 
+That includes intent-level ambiguity, not just thinness: if a task admits two materially
+different readings, this is your last chance to ask the user before the queue runs
+unattended. Once launched, nobody in the loop can — the executor's only recourse is to
+write `BLOCKED` and stop (see the stop-reason table below), which spends a cycle to reach
+the same question you could have asked now.
+
 ## 2. Check the relay is up and healthy
 
 ```
@@ -112,6 +118,7 @@ Then read the stop reason and act on it:
 | Stop reason | What it means |
 |---|---|
 | `queue drained` | Everything ran. Report the table. |
+| `<task> : executor is BLOCKED` | The executor hit a genuine ambiguity and asked a question instead of guessing (its charter's designed escalation) rather than a failure to fix. This never reached the scout, mutator, or validator — read `.relay/results/<task>.md` for its question and surface it verbatim. Do not re-launch until it's answered; if the answer changes what the task means, fix the spec too, since the same ambiguity is still sitting in the task file. |
 | `N consecutive FAIL verdicts` | The work is not converging. Hand the user the last validator report's Defects section — do not re-launch. |
 | `validator wrote no follow-up task` | The validator ended its report with `NEEDS HUMAN:`. Surface that line verbatim; it is a question only the user can answer. |
 | `executor/validator could not complete` | An agent lane broke and did not recover. Report which, and its last pane capture. |

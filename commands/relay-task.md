@@ -103,9 +103,28 @@ signal a charter is wrong, not that this task is special. Fix the charter in
 `~/.claude/relay/charters/` — task-level patches do not survive to the next task, which is
 how the same contradiction got hand-patched twice.
 
-Where two requirements can conflict on some input, decide it in the task rather than
-leaving it for the executor to resolve silently. If you genuinely want it left open, say so
-explicitly so the scout files it as an open question instead of guessing.
+**Resolve intent-level ambiguity with the user before writing this file — not after a
+cycle fails.** Every agent downstream has its own escalation path for ambiguity it
+discovers mid-cycle: the executor writes `BLOCKED` with a question, the pre-brief or the
+scout files an open question, the validator writes `NEEDS HUMAN:`. Those exist for what
+only surfaces once work is underway. But reaching any of them costs a full cycle, and
+each one is really asking a question only the user can answer — you're talking to them
+right now, so ask before you write the spec, not after an agent burns a cycle discovering
+the same thing.
+
+Keep two things separate:
+
+- **Two readings of the request would produce materially different work, or it has a
+  real gap.** That's the user's call, not yours to guess and not the executor's either.
+  Ask before writing the task file.
+- **The request is silent on something where any reasonable choice satisfies its intent**
+  (e.g. which of two equivalent orderings to use). Decide it yourself and write the
+  decision into the task, so the executor isn't the one guessing.
+
+If you deliberately want a question left open for the pre-brief or scout to surface as
+evidence rather than settled now — because the answer depends on what the code turns out
+to do — say so explicitly in the task. That's a narrow case, not a substitute for asking
+the user something only they can answer.
 
 ## 2. Dispatch to the executor — and the scout's pre-brief alongside it
 
@@ -150,6 +169,14 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" wait -Fil
 
 On timeout, capture the executor pane and diagnose before retrying. A stalled pane is
 usually an auth screen or an approval prompt, not a slow model.
+
+**Read the result's `## Status` line before doing anything else with it.** `BLOCKED`
+means the executor hit a genuine ambiguity and asked rather than guessed — that is its
+charter's designed escalation, not a failure. Do not send a `BLOCKED` result on to the
+scout, the mutator, or the validator; none of them can answer the executor's question,
+and running it through them anyway just spends more cycles to arrive back at the same
+question. Resolve it with the user, fix the task file if the answer changes what it
+means, and re-dispatch to the executor.
 
 ## 4. Send the scout to gather evidence
 

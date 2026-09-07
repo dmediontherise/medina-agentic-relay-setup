@@ -1243,6 +1243,19 @@ get_verdict() {
   printf 'UNPARSED'
 }
 
+# The executor's own escalation path: COMPLETE | PARTIAL | BLOCKED, one word on
+# the first non-blank line after the "## Status" heading (see executor.md). A
+# BLOCKED result carries a specific question for a human, not a bug to scout,
+# mutate, or grade - see the call site in cmd_autopilot for why that matters.
+get_exec_status() {
+  local r="$1"
+  [ -f "$r" ] || { printf 'MISSING'; return; }
+  awk '
+    found && NF { print; exit }
+    /^## Status/ { found=1 }
+  ' "$r" | tr -d '[:space:]'
+}
+
 # agy panes wedge after long uptime plus a long idle gap, and autopilot makes the
 # idle gaps longer. Two defences, both free: keepalive (make idle panes answer
 # during long waits so their token never sits expired for hours) and recycle
@@ -1760,6 +1773,24 @@ cmd_autopilot() {
 | $base | executor $r | run halted |"
         stop_reason="executor could not complete $base"; break
       fi
+    fi
+
+    # BLOCKED is the executor's designed escalation for a task it found genuinely
+    # ambiguous (executor.md: "write status BLOCKED with the specific question
+    # rather than guessing"). Nothing downstream can answer that question - the
+    # scout only observes, the mutator only mutates, the validator only grades -
+    # so running it through them anyway just spends a full cycle (and, with
+    # prefetch on, a second task's worth of wall clock) to arrive at the same
+    # FAIL this line reaches immediately, without ever surfacing the question.
+    # Stop here and hand it to the human who can actually answer it. This also
+    # covers the resumed and prefetched-result paths above, since all three
+    # converge on the same result_p before this point.
+    local exec_status; exec_status="$(get_exec_status "$result_p")"
+    if [ "$exec_status" = "BLOCKED" ]; then
+      run_log "$base : executor reported BLOCKED - stopping instead of running it through scout/mutation/validation"
+      summary="$summary
+| $base | BLOCKED | executor's question is in $result_p |"
+      stop_reason="$base : executor is BLOCKED and needs a human answer - see $result_p"; break
     fi
 
     # The mutation lane starts here and is never waited on.
