@@ -65,6 +65,11 @@ tier buys more mutants inside its time budget at no cost to the verdict. `agy mo
 lists what your account can reach. The default moved 3.6 → 3.7 on 2026-08-29 and
 3.7 → 3.8 on 2026-09-06.
 
+agy has a quota, and free accounts hit it. If [`opencode`](https://opencode.ai) is
+installed, the relay builds a free-model fallback for each of the three agy panes and
+falls to it automatically when that happens — see
+[Fallback: opencode's free models](#fallback-opencodes-free-models-when-agys-quota-runs-out).
+
 Note that the executor and the scout share a model. That does not weaken the chain:
 independence here comes from **role separation**, not model identity. The scout is a
 separate process with a separate charter that never sees the executor's reasoning — only
@@ -217,9 +222,11 @@ It belongs to the free pane now.
 | Executor | Antigravity CLI — `irm https://antigravity.google/cli/install.ps1 \| iex` | `curl -fsSL https://antigravity.google/cli/install.sh \| sh` |
 | Reviewers | Claude Code — `npm i -g @anthropic-ai/claude-code` | same |
 | Shell | Windows PowerShell 5.1 | bash 4+ |
+| Fallback *(optional)* | [`opencode`](https://opencode.ai) — free-model backup for agy's quota. On WSL, install it *inside* WSL, not via Windows npm — see [Fallback](#fallback-opencodes-free-models-when-agys-quota-runs-out) | `curl -fsSL https://opencode.ai/install \| bash` |
 
 Sign in once before wiring anything up — `agy` (Google browser sign-in) and `claude`.
-An agent pane sitting on an auth screen looks identical to a busy one.
+An agent pane sitting on an auth screen looks identical to a busy one. `opencode`'s free
+models need no sign-in at all.
 
 ---
 
@@ -299,7 +306,9 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 
 `--model <id>` / `-Model <id>` moves the three `agy` panes off the default
 `gemini-3.8-flash-high` for that run; `RELAY_AGY_MODEL` sets a persistent default, and
-`RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time.
+`RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time. The equivalent
+`RELAY_OPENCODE_MODEL` / `RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR}` move the
+opencode fallback model instead — see [Fallback](#fallback-opencodes-free-models-when-agys-quota-runs-out).
 
 Then drive a full cycle from your Claude session with `/relay-task <what you want built>`.
 For a queue of tasks, `/relay-auto` runs all of them unattended. Or by hand:
@@ -436,6 +445,56 @@ approve prompts yourself in an attached terminal.
 
 ---
 
+## Fallback: opencode's free models when agy's quota runs out
+
+Free `agy` accounts have a quota, and hitting it mid-run is not hypothetical — it is the
+failure mode this section was written from, the same day it was built. If
+[`opencode`](https://opencode.ai) is installed when you run `up`, the relay builds a
+second launcher for each of the three agy panes (executor, scout, mutator — never the
+validator, which has no fallback and stays Claude-only by design) on one of
+[opencode Zen](https://opencode.ai/docs/zen/)'s free, $0 models. `opencode models`
+lists what's currently free; the default is `opencode/big-pickle` (200k context,
+toolcall support, and none of the other free Zen models' caveats — Nemotron is
+NVIDIA-trial/no-confidential-data, Muse Spark trains future Meta models). Override with
+`RELAY_OPENCODE_MODEL` / `RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR}`, same
+precedence as the agy model variables above.
+
+**Automatic.** `autopilot`'s self-heal (`assert_agent_ready`) already restarts a faulted
+pane; when the fault is agy's quota and not something else, it now restarts that pane
+onto its opencode launcher instead of retrying the same exhausted agy, and logs it
+plainly — `restarted on opencode (free model, degraded vs agy) and responding` — so it
+shows up in the run log rather than passing as a normal recovery. `health`/`status` also
+call it out: `status` prints a `provider:` line and warns when any pane is on the
+fallback, and a quota `FAULT` line in `health` prints the fallback command right under
+the normal restart one.
+
+**Manual.**
+
+```bash
+relay.sh restart -a executor --provider opencode   # force that pane onto the fallback
+relay.sh restart -a executor --provider agy        # switch it back once quota resets
+relay.sh restart -a executor                       # no --provider: keeps whatever it was already on
+```
+
+`--provider` only takes a single agent, never `all` — the three panes can be on different
+providers at once, and `status` shows the split. Opt out of the automatic side entirely
+(keep the manual command available) with `RELAY_NO_OPENCODE_FALLBACK=1`.
+
+**This is a degradation, not a substitute.** A free model standing in for
+`gemini-3.8-flash-high` changes what the relay is actually verifying with, which is
+exactly why every path here says so loudly instead of swallowing it as a normal restart.
+Treat a pane running on the fallback as a sign to either wait out agy's quota reset or
+watch that lane's output more carefully than usual, not as a permanent configuration.
+
+The real agy quota message, so you can recognise it in a pane yourself:
+
+```
+⚠ Individual quota reached. Please upgrade your subscription to increase your
+limits. Resets in 2h19m3s.
+```
+
+---
+
 ## Troubleshooting
 
 **A pane is stuck, not busy.** This is the single most common failure. A pane sitting on a
@@ -479,6 +538,13 @@ agent, and have the multiplexer exec it directly. No quoting, no inherited envir
 **Executor pane dies instantly.** `agy` is not installed or not signed in. Panes are created
 with `-NoExit` (Windows) so the error stays readable — run `capture -a executor`.
 
+**A pane shows `Individual quota reached` (or `health` reports "agy quota likely
+exhausted").** That is agy's free-tier quota, not a wedge — restarting into agy again
+just hits the same wall. See
+[Fallback: opencode's free models](#fallback-opencodes-free-models-when-agys-quota-runs-out);
+autopilot handles it on its own, and `relay.sh restart -a <role> --provider opencode`
+does it by hand.
+
 **An `agy` agent reads the wrong project's files.** `agy` does **not** root itself in its
 process working directory — it runs its tools in its own config directory (`~/.gemini/
 antigravity-cli`). So a pane whose cwd is correct still resolves `.relay/executor.md`
@@ -497,6 +563,35 @@ read*, not just that the word appeared.
 ## What has actually been verified
 
 Being straight about this, since the failure modes above were all found the hard way.
+
+**On the 2026-09-07 opencode fallback,** split by what was actually exercised.
+
+*Verified.* Not staged — the account this was built against was already sitting on a
+genuine `Individual quota reached` across all three agy panes, so the fault-detection
+pattern in `pane_fault` was matched against the real error text, not a guess written from
+memory of typical Google API error strings. `relay.sh restart -a executor --provider
+opencode` was run for real: it launched `opencode --mini -m opencode/big-pickle --auto
+--prompt "<charter boot message>"` in the pane, the pane read the charter files and
+replied `READY`, and the relay's file-based `agent_responsive` liveness probe — the same
+one used for every other pane — passed against it. `status` and `health` were confirmed to
+report the new `provider:` line and the opencode-specific fault/recovery text correctly.
+The fully-automatic path (`assert_agent_ready` choosing `opencode` on its own, with no
+`--provider` given) was exercised directly against the same live quota-exhausted pane and
+produced the same result. Switching a pane back with `--provider agy` was also run for
+real. `relay.sh` parses (`bash -n`) after every change described here.
+
+*Not verified.* No autopilot run has gone through a full task cycle — dispatch, work,
+result file — with a pane actually running on the opencode fallback; only boot and the
+liveness probe were exercised, not real executor/scout/mutator work. Whether
+`opencode/big-pickle` (or another free Zen model) produces work and evidence of usable
+quality in these roles is untested, which is exactly why every surface here (run log,
+`status`, `health`) is deliberately loud about a pane being on it rather than presenting it
+as a transparent equivalent. The quota-message pattern match covers the one phrasing
+actually observed plus untested defensive coverage for others (`RESOURCE_EXHAUSTED`,
+`429`, etc.) — if agy's real message ever differs from `quota reached`, the fallback
+simply never triggers and the pane restarts into agy as it always did, which was chosen as
+the safe direction for an unverified pattern to fail in. `relay.ps1` (Windows/psmux) does
+not have this feature at all yet. Not exercised on macOS.
 
 **On the 2026-09-06 changes,** split by what was actually exercised.
 

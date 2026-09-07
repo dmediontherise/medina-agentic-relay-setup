@@ -73,6 +73,12 @@ BOOT_EXECUTOR="$BOOT_EXECUTOR"
 BOOT_VALIDATOR="$BOOT_VALIDATOR"
 BOOT_SCOUT="$BOOT_SCOUT"
 BOOT_MUTATOR="$BOOT_MUTATOR"
+L_EXECUTOR_OC="${L_EXECUTOR_OC:-}"
+L_SCOUT_OC="${L_SCOUT_OC:-}"
+L_MUTATOR_OC="${L_MUTATOR_OC:-}"
+PROVIDER_EXECUTOR="${PROVIDER_EXECUTOR:-agy}"
+PROVIDER_SCOUT="${PROVIDER_SCOUT:-agy}"
+PROVIDER_MUTATOR="${PROVIDER_MUTATOR:-agy}"
 EOF
 }
 
@@ -87,10 +93,15 @@ pane_for() {
 }
 
 # The agent's own executable, used to tell a live pane from a dead one. See
-# agent_process_alive.
+# agent_process_alive. executor/scout/mutator normally run agy, but any of the
+# three can be running its opencode fallback instead - see PROVIDER_* in
+# save_state/load_state and the opencode-fallback block in cmd_up/restart_agents.
 agent_proc_name() {
   case "$1" in
     validator) printf 'claude' ;;
+    executor)  eval "printf '%s' \"\${PROVIDER_EXECUTOR:-agy}\"" ;;
+    scout)     eval "printf '%s' \"\${PROVIDER_SCOUT:-agy}\"" ;;
+    mutator)   eval "printf '%s' \"\${PROVIDER_MUTATOR:-agy}\"" ;;
     *)         printf 'agy' ;;
   esac
 }
@@ -152,7 +163,10 @@ BOOTED_PAT='READY|\? for shortcuts|shift\+tab to cycle|bypass permissions on|acc
 # Match ONLY interrupt hints shown while actually running. Do not match completed-step
 # summaries like "Cogitated" - those stay on screen forever, so an idle pane would read
 # as permanently busy and health could never look at it again.
-BUSY_PAT='esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|Running…|Cogitating|Thinking…'
+# 'esc interrupt' (no "to") is opencode's --mini busy footer, observed 2026-09-07 -
+# see the opencode-fallback block below. It is distinct enough from agy/claude's own
+# busy text that adding it here is safe for every pane, fallback or not.
+BUSY_PAT='esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|Running…|Cogitating|Thinking…|esc interrupt'
 
 # Blocking modals we know how to clear. Each swallows input, so a dispatched
 # instruction is absorbed and never acted on.
@@ -181,6 +195,15 @@ pane_fault() {
   pane_match "$txt" 'UNAUTHENTICATED|invalid authentication credentials' && { printf 'expired/rejected credentials'; return 0; }
   pane_match "$txt" '/rate-limit-options|usage limit reached|Claude usage limit' && { printf 'Claude rate limit'; return 0; }
   pane_match "$txt" 'Please run /login|Invalid API key|not authenticated' && { printf 'agent is signed out'; return 0; }
+  # 'Individual quota reached ... Resets in <duration>' is agy's real free-tier
+  # quota message, confirmed 2026-09-07 (this relay's agy account hit it on all
+  # three panes during ordinary use). The rest of the alternation is defensive
+  # coverage for phrasings not yet observed here (standard Google API quota-error
+  # strings) - if one of those fires on something that is not really quota
+  # exhaustion, tighten it; if a real exhaustion matches none of them, the
+  # fallback below just never triggers and agy gets restarted into itself as
+  # before, same as pre-fallback behavior.
+  pane_match "$txt" 'quota reached|RESOURCE_EXHAUSTED|429 Too Many Requests|exceeded your current quota|Quota exceeded|rate limit exceeded' && { printf 'agy quota likely exhausted (heuristic)'; return 0; }
   return 0
 }
 
@@ -367,7 +390,11 @@ Medina Agentic Relay - tmux control plane
   relay.sh down                             Tear the session down
   relay.sh status                           Session state, pane list, bus contents
   relay.sh health   [-a <agent>] [--deep]   Prove each agent still answers
-  relay.sh restart  -a <agent|all>          Respawn a wedged or crashed pane in place
+  relay.sh restart  -a <agent|all> [--provider agy|opencode]
+                                            Respawn a wedged or crashed pane in place.
+                                            --provider (executor/scout/mutator only) forces
+                                            that pane onto agy or its opencode free-model
+                                            fallback; omitted, it keeps whatever it was on.
   relay.sh send     -a <agent> -t <text>    Type a line into a running agent
   relay.sh dispatch -a <agent> -T <task.md> [-p prebrief]
                                             Hand a task file to an agent
@@ -394,6 +421,15 @@ Medina Agentic Relay - tmux control plane
   agy model for the executor / scout / mutator panes, in precedence order:
     --model <id> on 'up'  >  RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}  >  RELAY_AGY_MODEL
     default: gemini-3.8-flash-high      ('agy models' lists what you can reach)
+
+  opencode fallback (executor/scout/mutator only, when agy's quota is exhausted):
+    autopilot falls a pane to it automatically (assert_agent_ready); manually with
+    'relay.sh restart -a <agent> --provider opencode', back to agy the same way with
+    '--provider agy'. Model, in precedence order:
+      RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR}  >  RELAY_OPENCODE_MODEL
+    default: opencode/big-pickle, one of opencode Zen's free $0 models ('opencode
+    models --verbose' lists the rest). Opt out of the automatic fallback entirely
+    with RELAY_NO_OPENCODE_FALLBACK=1.
 EOF
 }
 
@@ -558,11 +594,13 @@ cmd_up() {
   done
   local style_file="$workspace/.relay/house-style.md"
 
-  local agy_exe claude_exe
+  local agy_exe claude_exe opencode_exe
   agy_exe="$(command -v agy || true)"
   [ -z "$agy_exe" ] && [ -x "$HOME/.local/bin/agy" ] && agy_exe="$HOME/.local/bin/agy"
   claude_exe="$(command -v claude || true)"
   [ -z "$claude_exe" ] && [ -x "$HOME/.local/bin/claude" ] && claude_exe="$HOME/.local/bin/claude"
+  opencode_exe="$(command -v opencode || true)"
+  [ -z "$opencode_exe" ] && [ -x "$HOME/.opencode/bin/opencode" ] && opencode_exe="$HOME/.opencode/bin/opencode"
 
   if [ -z "$agy_exe" ]; then
     warn "'agy' (Antigravity CLI) not found - the agy panes will not start."
@@ -573,8 +611,14 @@ cmd_up() {
     warn "'claude' not found - the validator will not start."
     claude_exe="claude"
   fi
+  if [ -z "$opencode_exe" ]; then
+    say "opencode bin : not found - no free-model fallback if agy's quota runs out."
+    say "               Install: curl -fsSL https://opencode.ai/install | bash"
+    opencode_exe="opencode"
+  fi
   say "agy    bin   : $agy_exe   (executor + scout + mutator)"
   say "claude bin   : $claude_exe   (validator)"
+  say "opencode bin : $opencode_exe   (fallback for executor/scout/mutator when agy's quota runs out)"
 
   local launch="$workspace/.relay/launch"
 
@@ -598,6 +642,19 @@ cmd_up() {
   local agy_model_mut="${RELAY_AGY_MODEL_MUTATOR:-$agy_model}"
   local exec_flags="--dangerously-skip-permissions"
   local claude_mode="bypassPermissions"
+
+  # opencode fallback model for the three agy panes - only used when a pane's agy
+  # quota is detected exhausted (see pane_fault's quota heuristic and
+  # assert_agent_ready). opencode/big-pickle is one of opencode Zen's free,
+  # $0-cost models with the largest context window that doesn't carry the
+  # NVIDIA "trial only, no confidential data" or Meta training-data caveats the
+  # other free Zen models do - see `opencode models --verbose`. Override with
+  # RELAY_OPENCODE_MODEL (all three panes) or RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR}
+  # (per role) if you'd rather use a different free (or paid, BYOK) opencode model.
+  local oc_model="${RELAY_OPENCODE_MODEL:-opencode/big-pickle}"
+  local oc_model_exec="${RELAY_OPENCODE_MODEL_EXECUTOR:-$oc_model}"
+  local oc_model_scout="${RELAY_OPENCODE_MODEL_SCOUT:-$oc_model}"
+  local oc_model_mut="${RELAY_OPENCODE_MODEL_MUTATOR:-$oc_model}"
   if [ "$safe" -eq 1 ]; then
     exec_flags="--mode accept-edits"
     claude_mode="acceptEdits"
@@ -654,6 +711,22 @@ cmd_up() {
   l_mut="$(write_launcher  mutator   "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_mut" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
 
+  # opencode fallback launchers - built now, alongside the agy ones, so a mid-run
+  # fallback (assert_agent_ready / cmd_restart --provider opencode) never needs to
+  # recompute flags or boot text; it just points restart_agents at one of these
+  # instead of the agy launcher above. `--mini` is opencode's minimal-chrome
+  # interactive mode: plain scrollback text and a one-line footer, not the full
+  # panelled TUI - the only mode of opencode's that behaves like agy/claude do in a
+  # tiled pane (persistent process, screen-scrapable BUSY_PAT/BOOTED_PAT). `--auto`
+  # is opencode's analogue of agy's --dangerously-skip-permissions; omitted in
+  # --safe the same way exec_flags is.
+  local oc_auto_flag="--auto"
+  [ "$safe" -eq 1 ] && oc_auto_flag=""
+  local l_exec_oc l_scout_oc l_mut_oc
+  l_exec_oc="$(write_launcher  executor-oc "$(printf '%q --mini -m %s %s --prompt %q' "$opencode_exe" "$oc_model_exec" "$oc_auto_flag" "$exec_boot")")"
+  l_scout_oc="$(write_launcher scout-oc    "$(printf '%q --mini -m %s %s --prompt %q' "$opencode_exe" "$oc_model_scout" "$oc_auto_flag" "$scout_boot")")"
+  l_mut_oc="$(write_launcher   mutator-oc  "$(printf '%q --mini -m %s %s --prompt %q' "$opencode_exe" "$oc_model_mut" "$oc_auto_flag" "$mut_boot")")"
+
   say "Building session '$SESSION' in $workspace"
 
   tmux new-session -d -s "$SESSION" -n agents -c "$workspace" "$l_exec"
@@ -683,6 +756,8 @@ cmd_up() {
   SAFE="$safe"
   CREATED="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   L_EXECUTOR="$l_exec"; L_VALIDATOR="$l_val"; L_SCOUT="$l_scout"; L_MUTATOR="$l_mut"
+  L_EXECUTOR_OC="$l_exec_oc"; L_SCOUT_OC="$l_scout_oc"; L_MUTATOR_OC="$l_mut_oc"
+  PROVIDER_EXECUTOR="agy"; PROVIDER_SCOUT="agy"; PROVIDER_MUTATOR="agy"
   local now; now="$(date +%s)"
   BOOT_EXECUTOR="$now"; BOOT_VALIDATOR="$now"; BOOT_SCOUT="$now"; BOOT_MUTATOR="$now"
   save_state
@@ -719,6 +794,9 @@ cmd_up() {
   say "  scout     : agy / $agy_model_scout  -> $SCOUT_PANE"
   say "  mutator   : agy / $agy_model_mut  -> $MUTATOR_PANE"
   say "  bus watch : -> $BUS_PANE"
+  if [ -n "$l_exec_oc" ] && [ -f "$l_exec_oc" ]; then
+    say "  opencode fallback ready (free model, auto-falls-to on agy quota exhaustion): $oc_model_exec"
+  fi
   say "Attach with: tmux attach -t $SESSION"
 }
 
@@ -738,6 +816,11 @@ cmd_status() {
   printf '\033[32m[relay] UP  session=%s  workspace=%s\033[0m\n' "$SESSION" "$WORKSPACE"
   printf '        safe-mode=%s\n' "$SAFE"
   tmux list-panes -t "$SESSION:agents" -F '        pane #{pane_index} (#{pane_id}) cmd=#{pane_current_command} active=#{pane_active}'
+  printf '        provider: executor=%s scout=%s mutator=%s\n' \
+    "${PROVIDER_EXECUTOR:-agy}" "${PROVIDER_SCOUT:-agy}" "${PROVIDER_MUTATOR:-agy}"
+  case "agy ${PROVIDER_EXECUTOR:-agy} ${PROVIDER_SCOUT:-agy} ${PROVIDER_MUTATOR:-agy}" in
+    *opencode*) printf '\033[33m        NOTE: at least one pane is running on the opencode free-model fallback, not agy.\n                 Switch it back once agy quota resets: relay.sh restart -a <name> --provider agy\033[0m\n' ;;
+  esac
 
   local d n f
   for d in tasks results evidence reports mutation; do
@@ -806,6 +889,10 @@ cmd_health() {
     f="$(pane_fault "$t")"
     if [ -n "$f" ]; then
       printf '  %-10s \033[31mFAULT: %s%s\033[0m\n             recover with: relay.sh restart -a %s\n' "$n" "$f" "$age" "$n"
+      case "$f" in
+        *"quota likely exhausted"*)
+          printf '             or fall it to the free-model fallback: relay.sh restart -a %s --provider opencode\n' "$n" ;;
+      esac
       unhealthy=$((unhealthy+1)); continue
     fi
 
@@ -853,10 +940,36 @@ cmd_health() {
 #
 # Do NOT reach for 'respawn-pane'. Use kill-pane + split-window: the new pane
 # becomes active, so its id can be read straight back off the window.
+#
+# Third argument, provider_override ("agy" or "opencode"), only makes sense with a
+# single-agent $names and only affects executor/scout/mutator - the validator has
+# no fallback provider and always relaunches on claude. When omitted, each agent
+# keeps whatever provider it was already on (PROVIDER_<NAME>, default agy) - a
+# preemptive recycle or a keepalive miss on a pane already running its opencode
+# fallback must restart it back into opencode, not silently bounce it to agy.
 restart_agents() {
-  local names="$1" deep="${2:-0}" win="$SESSION:agents" targets="" n launcher old new
+  local names="$1" deep="${2:-0}" provider_override="${3:-}" win="$SESSION:agents" targets="" n launcher old new
+  if [ -n "$provider_override" ] && [ "$(printf '%s' "$names" | wc -w)" -gt 1 ]; then
+    fail "restart_agents: provider_override requires a single agent, got '$names'"
+  fi
+  case "$provider_override" in ''|agy|opencode) ;; *) fail "restart_agents: provider must be 'agy' or 'opencode', got '$provider_override'" ;; esac
+
   for n in $names; do
-    eval "launcher=\${L_$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]'):-}"
+    local upper; upper="$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]')"
+    if [ "$n" = "validator" ]; then
+      eval "launcher=\${L_VALIDATOR:-}"
+    else
+      local want_provider
+      if [ -n "$provider_override" ]; then want_provider="$provider_override"
+      else eval "want_provider=\${PROVIDER_$upper:-agy}"; fi
+      if [ "$want_provider" = "opencode" ]; then
+        eval "launcher=\${L_${upper}_OC:-}"
+        [ -n "$launcher" ] && [ -f "$launcher" ] || fail "No opencode fallback launcher for '$n' - it was not built at 'up' time (opencode missing then?). Run 'down' then 'up' with opencode installed."
+      else
+        eval "launcher=\${L_$upper:-}"
+      fi
+      eval "PROVIDER_$upper=\$want_provider"
+    fi
     [ -n "$launcher" ] && [ -f "$launcher" ] || fail "Launcher for '$n' is missing. Run 'down' then 'up'."
 
     old="$(pane_for "$n")"
@@ -902,19 +1015,23 @@ restart_agents() {
 }
 
 cmd_restart() {
-  local agent=""
+  local agent="" provider=""
   while [ $# -gt 0 ]; do
     case "$1" in
       -a|--agent) agent="$2"; shift 2 ;;
+      --provider) provider="$2"; shift 2 ;;
       --deep) shift ;;
       *) fail "Unknown option for restart: $1" ;;
     esac
   done
   [ -n "$agent" ] || fail "-a <executor|scout|mutator|validator|all> required"
+  if [ -n "$provider" ] && [ "$agent" = "all" ]; then
+    fail "--provider needs a single -a <executor|scout|mutator>, not 'all'"
+  fi
   load_state
   local names="$ALL_AGENTS"
   [ "$agent" != "all" ] && names="$agent"
-  restart_agents "$names"
+  restart_agents "$names" 0 "$provider"
   if [ -n "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
     printf '\033[31m[relay] still unhealthy after restart:%s\033[0m\n' "$RESTART_BAD"
     printf '\033[33m        Inspect with: relay.sh capture -a <name>\033[0m\n'
@@ -1339,7 +1456,7 @@ orphan_record() { mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true; print
 orphan_all()    { [ -f "$(orphan_file)" ] && cat "$(orphan_file)" 2>/dev/null || true; }
 
 assert_agent_ready() {
-  local n="$1" trouble left
+  local n="$1" trouble left provider_arg=""
   trouble="$(agent_trouble "$n")"
   [ -z "$trouble" ] && return 0
   left="$(budget_left "$n")"
@@ -1348,12 +1465,39 @@ assert_agent_ready() {
     return 1
   fi
   budget_dec "$n"
-  run_log "$n trouble: $trouble - restarting ($left restart(s) were left)"
-  restart_agents "$n" || true
+
+  # Quota exhaustion (heuristic - see pane_fault) is the one fault this relay can
+  # route around instead of just retrying: fall the pane to its opencode free-model
+  # launcher instead of restarting the same agy that just ran out. Only for
+  # executor/scout/mutator, only from agy (an opencode pane erroring falls through
+  # to the plain restart below, which stays on opencode via PROVIDER_<NAME>), only
+  # if a fallback launcher actually got built at 'up' time, and only if the user
+  # has not opted out with RELAY_NO_OPENCODE_FALLBACK.
+  case "$n:$trouble" in
+    executor:*"quota likely exhausted"*|scout:*"quota likely exhausted"*|mutator:*"quota likely exhausted"*)
+      if [ -z "${RELAY_NO_OPENCODE_FALLBACK:-}" ]; then
+        local upper; upper="$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]')"
+        local cur_provider oc_launcher
+        eval "cur_provider=\${PROVIDER_$upper:-agy}"
+        eval "oc_launcher=\${L_${upper}_OC:-}"
+        if [ "$cur_provider" = "agy" ] && [ -n "$oc_launcher" ] && [ -f "$oc_launcher" ]; then
+          provider_arg="opencode"
+          run_log "$n trouble: $trouble - falling back to opencode free model instead of retrying agy"
+        fi
+      fi
+      ;;
+  esac
+
+  [ -z "$provider_arg" ] && run_log "$n trouble: $trouble - restarting ($left restart(s) were left)"
+  restart_agents "$n" 0 "$provider_arg" || true
   if [ -n "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
     run_log "$n is STILL unhealthy after a restart"; return 1
   fi
-  run_log "$n restarted and responding"
+  if [ -n "$provider_arg" ]; then
+    run_log "$n restarted on opencode (free model, degraded vs agy) and responding"
+  else
+    run_log "$n restarted and responding"
+  fi
   return 0
 }
 

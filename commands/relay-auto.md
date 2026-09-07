@@ -147,7 +147,11 @@ Say this once at launch, not on every status update, and never as a reason to sk
 reading the log:
 
 - Restarts a faulted or **crashed** pane and re-dispatches the same task, with a restart
-  budget so a permanently broken agent stops the run instead of respawning forever.
+  budget so a permanently broken agent stops the run instead of respawning forever. If
+  the fault is agy's quota exhausted and opencode is installed, it falls that pane to its
+  free-model opencode fallback instead of retrying the same exhausted agy — a real
+  quality degradation, so check the run log for "restarted on opencode" and mention it
+  when reporting results, not just the pass/fail table.
 - Recycles the agy panes every ~3h between cycles, and pings idle ones during long waits,
   because the wedge this relay actually hits comes from long uptime plus a long idle gap.
 - Treats a missing evidence file as degradation, not permission to skip the scout: it

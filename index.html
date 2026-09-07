@@ -951,6 +951,13 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       </div>
     </div>
     <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(255,214,10,.12);">🆓</div>
+      <div>
+        <strong>opencode CLI <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
+        <span>Free-model fallback for when <code>agy</code>'s quota runs out. Install: <code>curl -fsSL https://opencode.ai/install | bash</code> — no sign-in needed for its free models</span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
       <div class="prereq-item-icon" style="background:rgba(90,200,250,.12);">🔑</div>
       <div>
         <strong>Google Account</strong>
@@ -1796,6 +1803,23 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       that asymmetry is what buys deep verification without a large token bill — and what keeps Opus affordable in
       the one seat that is pure judgment. Hitting rate limits? Drop the validator to
       <span class="mono">sonnet</span> before changing anything else.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🆓</span>
+    <div>
+      <strong style="color:var(--text)">Free-model fallback for the agy panes.</strong> If <span class="mono">opencode</span>
+      is installed, <span class="mono">up</span> builds a second launcher per executor/scout/mutator pane on one of
+      <a href="https://opencode.ai/docs/zen/" target="_blank" rel="noopener">opencode Zen</a>'s free, $0 models
+      (default <span class="mono">opencode/big-pickle</span>, no sign-in required). When agy reports its quota
+      exhausted, <span class="mono">autopilot</span> falls that pane onto opencode instead of retrying the same
+      exhausted agy — and says so out loud in the run log, since a free model standing in for Gemini is a real
+      degradation, not a silent equivalent swap. Do it by hand with
+      <span class="mono">restart -a &lt;role&gt; --provider opencode</span> (and back with
+      <span class="mono">--provider agy</span> once quota resets), or turn the automatic side off entirely with
+      <span class="mono">RELAY_NO_OPENCODE_FALLBACK=1</span>. Never applies to the validator, which stays
+      Claude-only by design.
     </div>
   </div>
 

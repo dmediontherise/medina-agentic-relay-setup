@@ -25,6 +25,14 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
    single pane can be moved on its own with `RELAY_AGY_MODEL_EXECUTOR`, `_SCOUT` or
    `_MUTATOR` in the environment instead.
 
+   If `opencode` is installed, `up` also builds a free-model fallback launcher for each
+   agy pane (default `opencode/big-pickle`, override with `RELAY_OPENCODE_MODEL*`). When
+   agy reports its quota exhausted, autopilot falls that pane to opencode on its own
+   (`assert_agent_ready`) instead of retrying the same exhausted agy; you can do it by
+   hand too — see `relay.sh restart`'s `--provider` flag below. It is a real degradation
+   (a free model standing in for Gemini), not a substitute for a healthy agy account — set
+   `RELAY_NO_OPENCODE_FALLBACK=1` to disable it entirely.
+
 2. Report any preflight warning the script prints verbatim. A missing `agy` or `claude`
    binary means that pane will not start at all.
 
@@ -64,6 +72,13 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
    ```
    `-a all`/`-Agent all` restarts all four. `restart` re-verifies liveness and exits
    non-zero if the agent is still broken.
+
+   For executor/scout/mutator, `--provider opencode` restarts that pane onto its
+   opencode free-model fallback instead of agy (useful when health reports "agy quota
+   likely exhausted" and you don't want to wait for autopilot to notice); `--provider agy`
+   switches it back once the account's quota resets. Omit `--provider` to restart on
+   whichever provider the pane was already running — it does not silently revert an
+   opencode fallback to agy.
 
 6. Tell the user they can watch it live with `psmux attach -t relay` (Ctrl+B d detaches),
    and that `/relay-auto` will run the whole queue unattended once tasks are written.
