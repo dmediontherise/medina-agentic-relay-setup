@@ -53,6 +53,12 @@ param(
     # you suspect that pane specifically, wasteful as a routine check.
     [switch]$Deep,
 
+    # 'restart -Agent <role> -Provider opencode' forces that pane onto its opencode
+    # free-model fallback instead of agy; '-Provider agy' switches it back. Only valid
+    # with a single executor/scout/mutator agent, never 'all' - see Restart-Agents.
+    [ValidateSet('', 'agy', 'opencode')]
+    [string]$Provider = '',
+
     # --- autopilot knobs -----------------------------------------------------
     # Autopilot runs the whole queue unattended, so every way it could run away
     # needs a ceiling. These are those ceilings, not tuning parameters.
@@ -170,7 +176,14 @@ $script:FatalPatterns = @(
     @{ Pattern = 'Agent execution terminated due to error'; What = 'agy agent fault (usually a wedged OAuth token)' },
     @{ Pattern = 'UNAUTHENTICATED|invalid authentication credentials'; What = 'expired/rejected credentials' },
     @{ Pattern = '/rate-limit-options|usage limit reached|Claude usage limit'; What = 'Claude rate limit' },
-    @{ Pattern = 'Please run /login|Invalid API key|not authenticated'; What = 'agent is signed out' }
+    @{ Pattern = 'Please run /login|Invalid API key|not authenticated'; What = 'agent is signed out' },
+    # 'Individual quota reached ... Resets in <duration>' is agy's real free-tier quota
+    # message, confirmed 2026-09-07 against a live exhausted account (both this and the
+    # bash port). The rest of the alternation is defensive coverage for phrasings not yet
+    # observed here - if one of those fires on something that is not really quota
+    # exhaustion, tighten it; if a real exhaustion matches none of them, the opencode
+    # fallback below just never triggers and agy gets restarted into itself as before.
+    @{ Pattern = 'quota reached|RESOURCE_EXHAUSTED|429 Too Many Requests|exceeded your current quota|Quota exceeded|rate limit exceeded'; What = 'agy quota likely exhausted (heuristic)' }
 )
 
 # An agent mid-task is healthy - and must not be interrupted by a liveness probe.
@@ -180,7 +193,10 @@ $script:FatalPatterns = @(
 # that stay on screen forever, so an idle pane reads as permanently busy and health can
 # never look at it again. That is the same "looks fine, is dead" failure this file exists
 # to prevent, just wearing a different hat.
-$script:BusyPatterns = 'esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|Running…|Cogitating|Thinking…'
+# 'esc interrupt' (no "to") is opencode's --mini busy footer, confirmed 2026-09-07 on
+# real Windows psmux - see the opencode-fallback block below. Distinct enough from
+# agy/claude's own busy text that adding it here is safe for every pane.
+$script:BusyPatterns = 'esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|Running…|Cogitating|Thinking…|esc interrupt'
 
 # Evidence that an agent TUI has finished booting and is sitting at its prompt.
 #
@@ -377,11 +393,21 @@ function Test-AgentResponsive($target, $timeoutSec = 75) {
 # 2026-08-12 against a healthy relay - all four panes reported 'powershell'). What does
 # work is '#{pane_pid}' plus a walk of that pid's descendants looking for the agent's own
 # executable.
-$script:AgentProcess = @{
-    executor  = 'agy.exe'
-    scout     = 'agy.exe'
-    mutator   = 'agy.exe'
-    validator = 'claude.exe'
+# executor/scout/mutator normally run agy.exe, but any of the three can be running its
+# opencode.exe fallback instead - see $state.providers, the opencode-fallback block in
+# 'up', and Restart-Agents' -Provider handling. Confirmed 2026-09-07: opencode's actual
+# process, three levels below the pane root (psmux shell -> launcher shell -> an inner
+# powershell.exe the npm shim spawns -> opencode.exe), is genuinely named 'opencode.exe' -
+# checked with Get-CimInstance, not assumed. Test-AgentProcessAlive's BFS walks the whole
+# subtree regardless of depth, so the extra level costs nothing here.
+function Get-AgentProcessName($state, $agentName) {
+    if ($agentName -eq 'validator') { return 'claude.exe' }
+    $p = 'agy'
+    if ($state -and $state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) {
+        $p = $state.providers.$agentName
+    }
+    if ($p -eq 'opencode') { return 'opencode.exe' }
+    return 'agy.exe'
 }
 
 function Get-PanePid($state, $agentName) {
@@ -398,7 +424,7 @@ function Get-PanePid($state, $agentName) {
 function Test-AgentProcessAlive($state, $agentName) {
     $rootPid = Get-PanePid $state $agentName
     if (-not $rootPid) { return $false }
-    $want = $script:AgentProcess[$agentName]
+    $want = Get-AgentProcessName $state $agentName
     if (-not $want) { return $true }
 
     $all = @(Get-CimInstance Win32_Process -EA SilentlyContinue |
@@ -435,7 +461,7 @@ function Get-AgentTrouble($state, $agentName) {
     $fault = Get-PaneFault $t
     if ($fault) { return $fault }
     if (-not (Test-AgentProcessAlive $state $agentName)) {
-        return "$($script:AgentProcess[$agentName]) is not running - the agent exited and left a bare shell"
+        return "$(Get-AgentProcessName $state $agentName) is not running - the agent exited and left a bare shell"
     }
     return $null
 }
@@ -693,8 +719,25 @@ if ($Command -eq 'up') {
         Write-Host "[relay] WARNING: 'claude' not found - the validator will not start." -ForegroundColor Yellow
         $claudeExe = 'claude'
     }
+    # opencode: optional free-model fallback for the three agy panes when agy's quota
+    # runs out - see the opencode-fallback block below. Not fatal if missing, unlike
+    # agy/claude: it only means no fallback, not that a required pane cannot start.
+    # 'npm install -g opencode-ai' on real Windows npm resolves this correctly on its
+    # own (unlike running it under WSL, which needs its own Linux install instead -
+    # see the README) - confirmed 2026-09-07, Get-Command found opencode.ps1 straight
+    # off, invoking a real opencode.exe underneath.
+    $opencodeExe = Resolve-Exe 'opencode' @(
+        '%APPDATA%\npm\opencode.cmd',
+        '%APPDATA%\npm\opencode.ps1'
+    )
+    if (-not $opencodeExe) {
+        Say "opencode bin : not found - no free-model fallback if agy's quota runs out."
+        Say "               Install: npm install -g opencode-ai"
+        $opencodeExe = 'opencode'
+    }
     Say "agy    bin   : $agyExe   (executor + scout)"
     Say "claude bin   : $claudeExe   (validator)"
+    Say "opencode bin : $opencodeExe   (fallback for executor/scout/mutator when agy's quota runs out)"
 
     # --- build the launchers, then create panes that RUN them -----------------
     # Do not type launch commands into an interactive shell. Two independent psmux
@@ -745,6 +788,22 @@ if ($Command -eq 'up') {
     $agyModelMut   = if ($env:RELAY_AGY_MODEL_MUTATOR)  { $env:RELAY_AGY_MODEL_MUTATOR }  else { $agyModel }
     $agyFlags = '--dangerously-skip-permissions'
     if ($Safe) { $agyFlags = '--mode accept-edits' }
+
+    # opencode fallback model for the three agy panes - only used when a pane's agy
+    # quota is detected exhausted (see the quota entry in $script:FatalPatterns and
+    # Assert-AgentReady). opencode/big-pickle is one of opencode Zen's free, $0 models
+    # with the largest context window that doesn't carry the NVIDIA "trial only, no
+    # confidential data" or Meta training-data caveats the other free Zen models do -
+    # see 'opencode models --verbose'. RELAY_OPENCODE_MODEL (all three) or
+    # RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR} (per role) override it.
+    $ocModel = $env:RELAY_OPENCODE_MODEL
+    if (-not $ocModel) { $ocModel = 'opencode/big-pickle' }
+    $ocModelExec  = if ($env:RELAY_OPENCODE_MODEL_EXECUTOR) { $env:RELAY_OPENCODE_MODEL_EXECUTOR } else { $ocModel }
+    $ocModelScout = if ($env:RELAY_OPENCODE_MODEL_SCOUT)    { $env:RELAY_OPENCODE_MODEL_SCOUT }    else { $ocModel }
+    $ocModelMut   = if ($env:RELAY_OPENCODE_MODEL_MUTATOR)  { $env:RELAY_OPENCODE_MODEL_MUTATOR }  else { $ocModel }
+    # --auto is opencode's analogue of agy's --dangerously-skip-permissions; omitted in
+    # -Safe the same way $agyFlags is.
+    $ocAutoFlag = if ($Safe) { '' } else { '--auto' }
 
     # agy does NOT root itself in the process working directory. Proven 2026-08-09: a
     # pane whose cwd is the workspace still runs its tools in C:\Users\<u>\.gemini\
@@ -818,6 +877,17 @@ if ($Command -eq 'up') {
     $mutBoot = "Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
     $mutLauncher = Write-Launcher 'mutator' "& `"$agyExe`" $agyRoot --model $agyModelMut $agyFlags -i `"$mutBoot`"`r`n"
 
+    # opencode fallback launchers - built now, alongside the agy ones, so a mid-run
+    # fallback (Restart-Agents -Provider opencode, automatic or by hand) never needs to
+    # recompute flags or boot text. '--mini' is opencode's minimal-chrome interactive
+    # mode: plain scrollback text and a one-line footer, confirmed 2026-09-07 on real
+    # Windows psmux to behave like agy/claude do in a tiled pane - persistent process,
+    # screen-scrapable busy/booted patterns - unlike opencode's full panelled TUI or its
+    # one-shot 'run' subcommand, neither of which fit this control plane's model.
+    $execOcLauncher   = Write-Launcher 'executor-oc' "& `"$opencodeExe`" --mini -m $ocModelExec $ocAutoFlag --prompt `"$agyBoot`"`r`n"
+    $scoutOcLauncher  = Write-Launcher 'scout-oc'    "& `"$opencodeExe`" --mini -m $ocModelScout $ocAutoFlag --prompt `"$scoutBoot`"`r`n"
+    $mutOcLauncher    = Write-Launcher 'mutator-oc'  "& `"$opencodeExe`" --mini -m $ocModelMut $ocAutoFlag --prompt `"$mutBoot`"`r`n"
+
     # Bus pane: live view of artifacts landing on the file bus.
     $watchBody = @(
         '$p = ".relay"'
@@ -887,6 +957,21 @@ if ($Command -eq 'up') {
             scout     = $scoutLauncher
             mutator   = $mutLauncher
         }
+        # opencode fallback launchers, no validator entry - it has no fallback and stays
+        # Claude-only by design. See Restart-Agents' -Provider handling.
+        ocLaunchers   = [ordered]@{
+            executor  = $execOcLauncher
+            scout     = $scoutOcLauncher
+            mutator   = $mutOcLauncher
+        }
+        # Which binary each of the three agy-role panes is actually running right now -
+        # 'agy' or 'opencode'. Read by Get-AgentProcessName and Restart-Agents; flipped
+        # by Assert-AgentReady's automatic fallback or a manual 'restart -Provider'.
+        providers     = [ordered]@{
+            executor  = 'agy'
+            scout     = 'agy'
+            mutator   = 'agy'
+        }
         # Per-agent boot time. agy panes wedge after long uptime, so 'health' needs
         # to know how old each process is - not just when the session was created.
         booted        = [ordered]@{
@@ -940,6 +1025,9 @@ if ($Command -eq 'up') {
     Say "  scout     : agy / $agyModelScout  -> $($ids['2'])"
     Say "  mutator   : agy / $agyModelMut  -> $($ids['3'])"
     Say "  bus watch : -> $($ids['4'])"
+    if ($execOcLauncher -and (Test-Path $execOcLauncher)) {
+        Say "  opencode fallback ready (free model, auto-falls-to on agy quota exhaustion): $ocModelExec"
+    }
     Say "Attach with: psmux attach -t $Session"
     if ($script:ScaffoldedNew) {
         Write-Host ""
@@ -970,6 +1058,18 @@ if ($Command -eq 'status') {
     Write-Host "[relay] UP  session=$($s.session)  workspace=$($s.workspace)" -ForegroundColor Green
     Write-Host "        safe-mode=$($s.safe)"
     psmux list-panes -t "$($s.session):agents" -F "        pane #{pane_index} (#{pane_id}) cmd=#{pane_current_command} active=#{pane_active}"
+
+    $provExec = 'agy'; $provScout = 'agy'; $provMut = 'agy'
+    if ($s.providers) {
+        if ($s.providers.executor) { $provExec = $s.providers.executor }
+        if ($s.providers.scout)    { $provScout = $s.providers.scout }
+        if ($s.providers.mutator)  { $provMut = $s.providers.mutator }
+    }
+    Write-Host "        provider: executor=$provExec scout=$provScout mutator=$provMut"
+    if ($provExec -eq 'opencode' -or $provScout -eq 'opencode' -or $provMut -eq 'opencode') {
+        Write-Host "        NOTE: at least one pane is running on the opencode free-model fallback, not agy." -ForegroundColor Yellow
+        Write-Host "              Switch it back once agy quota resets: relay.ps1 restart -Agent <name> -Provider agy" -ForegroundColor Yellow
+    }
 
     $bus = Join-Path $s.workspace '.relay'
     foreach ($d in 'tasks', 'results', 'evidence', 'reports') {
@@ -1049,6 +1149,9 @@ if ($Command -eq 'health') {
         if ($fault) {
             Write-Host "$line FAULT: $fault$age" -ForegroundColor Red
             Write-Host "             recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
+            if ($fault -like '*quota likely exhausted*') {
+                Write-Host "             or fall it to the free-model fallback: relay.ps1 restart -Agent $n -Provider opencode" -ForegroundColor Yellow
+            }
             $unhealthy++
             continue
         }
@@ -1057,7 +1160,7 @@ if ($Command -eq 'health') {
         # not faulted, so without this it falls through to the probe and merely looks
         # slow. This is the check that names it as a crash.
         if (-not (Test-AgentProcessAlive $s $n)) {
-            Write-Host "$line CRASHED - $($script:AgentProcess[$n]) is not running in that pane$age" -ForegroundColor Red
+            Write-Host "$line CRASHED - $(Get-AgentProcessName $s $n) is not running in that pane$age" -ForegroundColor Red
             Write-Host "             the pane survived as a bare shell; recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
             $unhealthy++
             continue
@@ -1115,15 +1218,46 @@ if ($Command -eq 'health') {
 # Factored into a function because autopilot restarts wedged panes on its own. That
 # self-healing is the single biggest reason a long unattended run survives: the fault
 # this relay actually hits is a wedged agy token, and it is fixed by exactly this.
-function Restart-Agents($s, $names, $deep) {
+# $providerOverride ('agy' or 'opencode', default '') only makes sense with a single-
+# agent $names and only affects executor/scout/mutator - the validator has no fallback
+# and always relaunches on claude. Left empty, each agent keeps whatever provider it was
+# already on ($s.providers.<name>, default 'agy') - a preemptive recycle or a keepalive
+# miss on a pane already running its opencode fallback must restart it back into
+# opencode, not silently bounce it to agy.
+function Restart-Agents($s, $names, $deep, $providerOverride = '') {
     if (-not $s.launchers) {
         Fail "This relay was started before launchers were recorded. Run 'down' then 'up' once to enable restart."
+    }
+    if ($providerOverride -and @($names).Count -gt 1) {
+        Fail "Restart-Agents: -Provider requires a single agent, got '$($names -join ', ')'"
     }
 
     $win = "$($s.session):agents"
     $targets = @()
     foreach ($n in $names) {
-        $launcher = $s.launchers.$n
+        if ($n -eq 'validator') {
+            $launcher = $s.launchers.$n
+        }
+        else {
+            $wantProvider = $providerOverride
+            if (-not $wantProvider) {
+                $wantProvider = 'agy'
+                if ($s.providers -and ($s.providers.PSObject.Properties.Name -contains $n)) { $wantProvider = $s.providers.$n }
+            }
+            if ($wantProvider -eq 'opencode') {
+                $launcher = $null
+                if ($s.ocLaunchers) { $launcher = $s.ocLaunchers.$n }
+                if (-not $launcher -or -not (Test-Path $launcher)) {
+                    Fail "No opencode fallback launcher for '$n' - it was not built at 'up' time (opencode missing then?). Run 'down' then 'up' with opencode installed."
+                }
+            }
+            else {
+                $launcher = $s.launchers.$n
+            }
+            if (-not $s.providers) { $s | Add-Member -NotePropertyName providers -NotePropertyValue ([pscustomobject]@{}) -Force }
+            if ($s.providers.PSObject.Properties.Name -contains $n) { $s.providers.$n = $wantProvider }
+            else { $s.providers | Add-Member -NotePropertyName $n -NotePropertyValue $wantProvider }
+        }
         if (-not $launcher -or -not (Test-Path $launcher)) {
             Fail "Launcher for '$n' is missing ($launcher). Run 'down' then 'up'."
         }
@@ -1210,12 +1344,15 @@ function Restart-Agents($s, $names, $deep) {
 
 if ($Command -eq 'restart') {
     if (-not $Agent) { Fail "-Agent required (executor|scout|mutator|validator|all)" }
+    if ($Provider -and $Agent -eq 'all') {
+        Fail "-Provider needs a single -Agent <executor|scout|mutator>, not 'all'"
+    }
     $s = Get-State
 
     $names = $script:AllAgents
     if ($Agent -ne 'all') { $names = @($Agent) }
 
-    $bad = Restart-Agents $s $names $Deep
+    $bad = Restart-Agents $s $names $Deep $Provider
     if ($bad.Count -gt 0) {
         Write-Host "[relay] still unhealthy after restart: $($bad -join ', ')" -ForegroundColor Red
         Write-Host "        Inspect with: relay.ps1 capture -Agent <name>" -ForegroundColor Yellow
@@ -1717,13 +1854,40 @@ function Assert-AgentReady($state, $agentName, $logPath) {
         return $false
     }
     $script:RestartBudget[$agentName] = $left - 1
-    Write-RunLog $logPath "$agentName trouble: $trouble - restarting ($left restart(s) were left)"
-    $bad = Restart-Agents $state @($agentName) $false
+
+    # Quota exhaustion (heuristic - see $script:FatalPatterns) is the one fault this
+    # relay can route around instead of just retrying: fall the pane to its opencode
+    # free-model launcher instead of restarting the same agy that just ran out. Only for
+    # executor/scout/mutator, only from agy (an opencode pane erroring falls through to
+    # the plain restart below, which stays on opencode via $state.providers), only if a
+    # fallback launcher actually got built at 'up' time, and only if the user has not
+    # opted out with RELAY_NO_OPENCODE_FALLBACK.
+    $providerArg = ''
+    if ($agentName -ne 'validator' -and $trouble -like '*quota likely exhausted*' -and -not $env:RELAY_NO_OPENCODE_FALLBACK) {
+        $curProvider = 'agy'
+        if ($state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) { $curProvider = $state.providers.$agentName }
+        $ocLauncher = $null
+        if ($state.ocLaunchers) { $ocLauncher = $state.ocLaunchers.$agentName }
+        if ($curProvider -eq 'agy' -and $ocLauncher -and (Test-Path $ocLauncher)) {
+            $providerArg = 'opencode'
+            Write-RunLog $logPath "$agentName trouble: $trouble - falling back to opencode free model instead of retrying agy"
+        }
+    }
+
+    if (-not $providerArg) {
+        Write-RunLog $logPath "$agentName trouble: $trouble - restarting ($left restart(s) were left)"
+    }
+    $bad = Restart-Agents $state @($agentName) $false $providerArg
     if ($bad -and $bad.Count -gt 0) {
         Write-RunLog $logPath "$agentName is STILL unhealthy after a restart"
         return $false
     }
-    Write-RunLog $logPath "$agentName restarted and responding"
+    if ($providerArg) {
+        Write-RunLog $logPath "$agentName restarted on opencode (free model, degraded vs agy) and responding"
+    }
+    else {
+        Write-RunLog $logPath "$agentName restarted and responding"
+    }
     return $true
 }
 
