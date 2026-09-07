@@ -6,6 +6,10 @@ Shut down the relay.
 
 1. Before killing anything, check for work in flight:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" status
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" status
    ```
    If a task was dispatched with no matching result or report yet, tell the user what
@@ -16,12 +20,20 @@ Shut down the relay.
    leaves it dispatching into dead panes until its restart budget runs out. Create the
    stop file and let it finish the phase it is in:
    ```
+   # Linux/macOS
+   touch "<workspace>/.relay/STOP"
+
+   # Windows
    New-Item -ItemType File "<workspace>\.relay\STOP"
    ```
    Then wait for the autopilot process to exit before running `down`.
 
 2. Tear down:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" down
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" down
    ```
 

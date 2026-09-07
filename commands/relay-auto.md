@@ -31,6 +31,10 @@ the same question you could have asked now.
 ## 2. Check the relay is up and healthy
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" health
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
 ```
 
@@ -44,6 +48,10 @@ off. A pane that will not come back after a restart is.
 ## 3. Launch it in the background
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" autopilot
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" autopilot
 ```
 
@@ -53,26 +61,26 @@ while their own relay works. You are notified when it exits.
 
 Knobs, all of them ceilings rather than tuning:
 
-| Flag | Default | What it bounds |
-|---|---|---|
-| `-BudgetMin` | 480 | wall clock for the whole run |
-| `-MaxCycles` | 24 | task cycles in one run |
-| `-MaxConsecutiveFails` | 3 | consecutive FAILs before it stops rather than grinds |
-| `-MutationDrainMin` | 20 | how long it waits at the end for late mutation reports |
-| `-NoMutation` | off | skip the mutation lane entirely |
-| `-NoPrebrief` | off | skip the scout's spec-first pre-brief pass |
-| `-Pipeline` | off | start the next task on the executor while the validator grades this one |
+| Flag (Windows) | Flag (Linux/macOS) | Default | What it bounds |
+|---|---|---|---|
+| `-BudgetMin` | `--budget-min` | 480 | wall clock for the whole run |
+| `-MaxCycles` | `--max-cycles` | 24 | task cycles in one run |
+| `-MaxConsecutiveFails` | `--max-fails` | 3 | consecutive FAILs before it stops rather than grinds |
+| `-MutationDrainMin` | `--mutation-drain-min` | 20 | how long it waits at the end for late mutation reports |
+| `-NoMutation` | `--no-mutation` | off | skip the mutation lane entirely |
+| `-NoPrebrief` | `--no-prebrief` | off | skip the scout's spec-first pre-brief pass |
+| `-Pipeline` | `--pipeline` | off | start the next task on the executor while the validator grades this one |
 
-`-NoPrebrief` turns off the one step that keeps the scout's probes honest — they get
-written from the task file before the executor's code exists, which is what stops them
-asserting whatever the implementation happens to do. Leave it on unless the user is
-debugging the scout lane itself.
+`-NoPrebrief`/`--no-prebrief` turns off the one step that keeps the scout's probes
+honest — they get written from the task file before the executor's code exists, which is
+what stops them asserting whatever the implementation happens to do. Leave it on unless
+the user is debugging the scout lane itself.
 
-`-Pipeline` is the one flag here that is a speed/safety trade rather than a ceiling, so
-decide it deliberately. It takes a whole executor phase — the longest phase in the cycle —
-off the wall clock for every task after the first, by starting task N+1 while the
-validator is still grading N. What it gives up is the guarantee that exactly one task's
-changes are in the tree at a time.
+`-Pipeline`/`--pipeline` is the one flag here that is a speed/safety trade rather than a
+ceiling, so decide it deliberately. It takes a whole executor phase — the longest phase in
+the cycle — off the wall clock for every task after the first, by starting task N+1 while
+the validator is still grading N. What it gives up is the guarantee that exactly one
+task's changes are in the tree at a time.
 
 Autopilot refuses the prefetch whenever the two tasks' `Scope` → `In:` paths overlap, or
 when either task does not state a parseable one, and it tells the validator in its
@@ -83,8 +91,8 @@ all touch the same files.** It buys nothing in the latter case anyway: every pre
 be refused by the scope guard.
 
 Pass the ones the user asked for and leave the rest alone. Never raise a ceiling to get
-past a stop — a run that hit `-MaxConsecutiveFails` is telling you the work is not
-converging, and giving it more attempts buys more of the same.
+past a stop — a run that hit `-MaxConsecutiveFails`/`--max-fails` is telling you the work
+is not converging, and giving it more attempts buys more of the same.
 
 ## 4. While it runs
 
@@ -95,6 +103,10 @@ you nothing the log will not.
 If the user wants it stopped, create the stop file rather than killing anything:
 
 ```
+# Linux/macOS
+touch "<workspace>/.relay/STOP"
+
+# Windows
 New-Item -ItemType File "<workspace>\.relay\STOP"
 ```
 

@@ -6,6 +6,10 @@ Report the current state of the agentic relay.
 
 1. Session and bus summary:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" status
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" status
    ```
    This also warns about tasks that have a result but no scout evidence, and about agy
@@ -14,11 +18,15 @@ Report the current state of the agentic relay.
 2. Agent liveness — `status` deliberately does not check this, because proving an agent
    is alive means making it answer:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" health
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
    ```
    Exit `1` means an agent is faulted, crashed or unresponsive; the output names it and
-   prints the recovery command. Probing the agy panes is free; add `-Deep` to probe the
-   validator only when you suspect that pane, since it costs Claude quota.
+   prints the recovery command. Probing the agy panes is free; add `--deep`/`-Deep` to
+   probe the validator only when you suspect that pane, since it costs Claude quota.
 
    Four states worth telling apart in what you report back:
    - `FAULT` — a known bad banner on screen (wedged token, rate limit, signed out).
@@ -30,6 +38,10 @@ Report the current state of the agentic relay.
 
 3. Live view of any agent that `health` flagged:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" capture -a scout -n 30
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" capture -Agent scout -Lines 30
    ```
 

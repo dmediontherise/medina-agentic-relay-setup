@@ -9,9 +9,13 @@ Create a new project and start the relay on it: $ARGUMENTS
 
 2. Run:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" new <name>
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" new <name>
    ```
-   Add `-Safe` if the user wants gated approvals instead of unattended agents.
+   Add `--safe`/`-Safe` if the user wants gated approvals instead of unattended agents.
 
    This creates the directory, runs `git init` with an initial commit, writes a
    `.gitignore` that excludes the `.relay/` bus, seeds `.relay/tasks/001-first-task.md`,
@@ -24,6 +28,10 @@ Create a new project and start the relay on it: $ARGUMENTS
 
 4. Confirm the agents actually booted before calling it ready:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" health
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
    ```
    All four agents — executor, scout, mutator, validator — must come back clean. Do not

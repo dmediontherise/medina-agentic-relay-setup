@@ -22,6 +22,10 @@ Print the resolved plan path before continuing, so the user can catch a wrong pi
 ## 2. Make sure the relay is up
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" health
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
 ```
 
@@ -114,6 +118,10 @@ task — fix the charter in `~/.claude/relay/charters/` instead.
 ## 4. Hand it to autopilot
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" autopilot
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" autopilot
 ```
 

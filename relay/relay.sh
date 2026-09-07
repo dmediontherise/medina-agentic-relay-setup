@@ -360,7 +360,8 @@ usage() {
   cat <<'EOF'
 Medina Agentic Relay - tmux control plane
 
-  relay.sh new  <project-name|path>         Scaffold a project, then bring the relay up on it
+  relay.sh new  <project-name|path> [--safe] [--model <id>]
+                                            Scaffold a project, then bring the relay up on it
   relay.sh up   [-w <workspace>] [--safe] [--model <id>]
                                             Build the session and boot the agents
   relay.sh down                             Tear the session down
@@ -398,8 +399,17 @@ EOF
 
 # ============================================================== NEW ==========
 cmd_new() {
-  local name="${1:-}"
-  [ -n "$name" ] || fail "Usage: relay.sh new <project-name|path>"
+  local name="" up_args=()
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --safe)          up_args+=(--safe); shift ;;
+      --model)         up_args+=(--model "$2"); shift 2 ;;
+      -*)              fail "Unknown option for new: $1" ;;
+      *)               [ -z "$name" ] || fail "Usage: relay.sh new <project-name|path> [--safe] [--model <id>]"
+                        name="$1"; shift ;;
+    esac
+  done
+  [ -n "$name" ] || fail "Usage: relay.sh new <project-name|path> [--safe] [--model <id>]"
 
   local target="$name"
   case "$target" in /*) ;; *) target="$PWD/$name" ;; esac
@@ -510,7 +520,7 @@ pushing the assertion into the test suite and verifying with `pytest -q`.>
 EOF
   say "Seeded   .relay/tasks/001-first-task.md"
 
-  cmd_up -w "$target"
+  cmd_up -w "$target" "${up_args[@]}"
   printf '\n  \033[1mNext:\033[0m\n'
   printf '    1. Fill in .relay/tasks/001-first-task.md (requirements + verification)\n'
   printf '    2. Run /relay-task in Claude Code from %s, or /relay-auto for the whole queue\n' "$target"
@@ -597,9 +607,21 @@ cmd_up() {
     local name="$1" body="$2"
     {
       printf '#!/usr/bin/env bash\n'
-      printf 'export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"\n'
+      printf 'export PATH="$HOME/.gemini/antigravity-cli/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n'
       printf 'cd %q || exit 1\n' "$workspace"
       printf '%s\n' "$body"
+      # $body must run as a plain foreground command, never `exec`-ed - this trailer
+      # is what turns "the agent's process died" into "the pane is a recoverable bare
+      # shell" instead of "the pane, and maybe the whole tmux session, is gone". An
+      # `exec` here replaces this script's own process with the agent's, so when the
+      # agent exits there is nothing left to run these lines: no exit message, no
+      # shell to inspect, no pane for `restart` to find. Verified empirically -
+      # `exec false` kills the pane/session outright; plain `false` with this trailer
+      # leaves a live pane sitting at a bash prompt. The CRASHED check below depends
+      # on that bare shell existing.
+      printf 'ec=$?\n'
+      printf 'printf "\\n[relay] %s exited (exit code %%d)\\n" "$ec"\n' "$name"
+      printf 'exec bash\n'
     } > "$launch/$name.sh"
     chmod +x "$launch/$name.sh"
     printf '%s' "$launch/$name.sh"
@@ -619,16 +641,17 @@ cmd_up() {
   # .relay/mutants/<task>/, so it can still be grinding on task 007 while the
   # executor edits the real tree for task 008.
   local l_exec l_val l_scout l_mut l_bus
-  l_exec="$(write_launcher executor  "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_exec" "$exec_flags" "$exec_boot")")"
+  # None of these bodies are `exec`-ed - see write_launcher's own comment for why.
+  l_exec="$(write_launcher executor  "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_exec" "$exec_flags" "$exec_boot")")"
   # house-style goes in the SYSTEM prompt, not the boot message. A charter read as the
   # reply to a first user turn is a fact in a transcript: it competes with Claude Code's
   # own stock system prompt and decays as the conversation grows. An appended system
   # prompt is prepended to every turn instead, so the rules on form bind as hard on turn
   # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and long;
   # this file is the law, and short.
-  l_val="$(write_launcher  validator "$(printf 'exec %q --model sonnet --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
-  l_scout="$(write_launcher scout    "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_scout" "$exec_flags" "$scout_boot")")"
-  l_mut="$(write_launcher  mutator   "$(printf 'exec %q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_mut" "$exec_flags" "$mut_boot")")"
+  l_val="$(write_launcher  validator "$(printf '%q --model sonnet --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
+  l_scout="$(write_launcher scout    "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_scout" "$exec_flags" "$scout_boot")")"
+  l_mut="$(write_launcher  mutator   "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_mut" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
 
   say "Building session '$SESSION' in $workspace"

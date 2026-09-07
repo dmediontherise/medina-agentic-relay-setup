@@ -13,13 +13,17 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
 
 1. Run:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" up -w "<current workspace path>"
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Workspace "<current workspace path>"
    ```
-   Add `-Safe` if the user asked for gated approvals instead of unattended agents.
-   Add `-Model <id>` to run the three `agy` panes on something other than the default
-   `gemini-3.8-flash-high` — `agy models` lists what the account can reach. A single
-   pane can be moved on its own with `RELAY_AGY_MODEL_EXECUTOR`, `_SCOUT` or `_MUTATOR`
-   in the environment instead.
+   Add `--safe`/`-Safe` if the user asked for gated approvals instead of unattended agents.
+   Add `--model <id>`/`-Model <id>` to run the three `agy` panes on something other than
+   the default `gemini-3.8-flash-high` — `agy models` lists what the account can reach. A
+   single pane can be moved on its own with `RELAY_AGY_MODEL_EXECUTOR`, `_SCOUT` or
+   `_MUTATOR` in the environment instead.
 
 2. Report any preflight warning the script prints verbatim. A missing `agy` or `claude`
    binary means that pane will not start at all.
@@ -38,20 +42,28 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
 4. Check health any time you are unsure — it is cheap and it is the only check that
    distinguishes a working agent from a wedged one:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" health
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
    ```
    It sends each agy pane a liveness probe (free) and passively inspects the validator.
-   Add `-Deep` to probe the validator too — that one costs Claude quota, so use it when
-   you suspect the validator specifically, not routinely. Exit `1` means something is
-   unhealthy; the output names the agent and the fault.
+   Add `--deep`/`-Deep` to probe the validator too — that one costs Claude quota, so use
+   it when you suspect the validator specifically, not routinely. Exit `1` means
+   something is unhealthy; the output names the agent and the fault.
 
 5. If an agent has faulted, restart **that pane only** — it keeps the other two agents'
    conversation context, which a full `down`/`up` throws away:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" restart -a scout
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" restart -Agent scout
    ```
-   `-Agent all` restarts all four. `restart` re-verifies liveness and exits non-zero if
-   the agent is still broken.
+   `-a all`/`-Agent all` restarts all four. `restart` re-verifies liveness and exits
+   non-zero if the agent is still broken.
 
 6. Tell the user they can watch it live with `psmux attach -t relay` (Ctrl+B d detaches),
    and that `/relay-auto` will run the whole queue unattended once tasks are written.
@@ -80,11 +92,18 @@ Practical consequences:
 
 ### The second way it breaks: the process just exits
 
-Added 2026-08-12. Panes launch with `-NoExit` so a crash stays inspectable, which means an
-agent that dies leaves a **bare PowerShell prompt**. That matches no fault pattern, shows
-no busy hint, and prints nothing alarming — it is invisible to every screen-based check.
-psmux is no help either: `#{pane_current_command}` reports `powershell` for every relay
-pane whether the agent is alive or not.
+Added 2026-08-12, on Windows. Panes launch with `-NoExit` so a crash stays inspectable,
+which means an agent that dies leaves a **bare PowerShell prompt**. That matches no fault
+pattern, shows no busy hint, and prints nothing alarming — it is invisible to every
+screen-based check. psmux is no help either: `#{pane_current_command}` reports
+`powershell` for every relay pane whether the agent is alive or not.
+
+On Linux/macOS, `relay.sh`'s launcher script runs the agent as a plain foreground command
+rather than exec-ing into it, specifically so `#{pane_current_command}` *does* distinguish
+alive (`agy`/`claude`) from dead (`bash`, once the trailer's exit-code echo and `exec bash`
+take over) — see the comment on `write_launcher` in `relay.sh`. The underlying risk is the
+same either way, which is why the fix below is cross-platform: `health` walks each pane's
+process tree for the agent's own binary rather than trusting the screen.
 
 `health` now walks each pane's process tree for the agent's own executable (`agy.exe`, or
 `claude.exe` for the validator) and reports `CRASHED` when it is gone. If you are ever

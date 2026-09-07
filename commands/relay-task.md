@@ -133,6 +133,11 @@ phase in the cycle, and the one useful thing it can do without the code is decid
 *correct* means:
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" dispatch -a executor -T ".relay/tasks/NNN-<slug>.md"
+"$HOME/.claude/relay/relay.sh" dispatch -a scout -T ".relay/tasks/NNN-<slug>.md" -p prebrief
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent executor -Task ".relay/tasks/NNN-<slug>.md"
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent scout -Task ".relay/tasks/NNN-<slug>.md" -Phase prebrief
 ```
@@ -164,6 +169,10 @@ produce a risky run — it produces a serial one. List real paths.
 ## 3. Wait for the result
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" wait -f ".relay/results/NNN-<slug>.md" -a executor --timeout 1200
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" wait -File ".relay/results/NNN-<slug>.md" -Agent executor -TimeoutSec 1200
 ```
 
@@ -197,6 +206,11 @@ and a line typed into a busy `agy` pane is swallowed. If `.relay/probe/NNN-<slug
 is not there yet, `capture -Agent scout` and give it a few minutes.
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" dispatch -a scout -T ".relay/tasks/NNN-<slug>.md"
+"$HOME/.claude/relay/relay.sh" wait -f ".relay/evidence/NNN-<slug>.md" -a scout --timeout 900
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent scout -Task ".relay/tasks/NNN-<slug>.md"
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" wait -File ".relay/evidence/NNN-<slug>.md" -Agent scout -TimeoutSec 900
 ```
@@ -217,6 +231,10 @@ So treat a missing evidence file as a **hard stop**, never as a reason to move o
    still working, or idle-but-silent. Act on what it says.
 3. If the scout has faulted, restart that pane and re-dispatch **the same task**:
    ```
+   # Linux/macOS
+   "$HOME/.claude/relay/relay.sh" restart -a scout
+
+   # Windows
    powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" restart -Agent scout
    ```
    A restart clears this fault; the credentials are re-read clean at startup.
@@ -237,6 +255,11 @@ tree.
 Start it right after the executor's result lands, and **do not wait for it**:
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" snapshot -T ".relay/tasks/NNN-<slug>.md"
+"$HOME/.claude/relay/relay.sh" dispatch -a mutator -T ".relay/tasks/NNN-<slug>.md"
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" snapshot -Task ".relay/tasks/NNN-<slug>.md"
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent mutator -Task ".relay/tasks/NNN-<slug>.md"
 ```
@@ -252,6 +275,11 @@ quality. Under `/relay-auto` it is automatic.
 ## 5. Route to the validator
 
 ```
+# Linux/macOS
+"$HOME/.claude/relay/relay.sh" dispatch -a validator -T ".relay/tasks/NNN-<slug>.md"
+"$HOME/.claude/relay/relay.sh" wait -f ".relay/reports/NNN-<slug>.md" -a validator --timeout 1200
+
+# Windows
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" dispatch -Agent validator -Task ".relay/tasks/NNN-<slug>.md"
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" wait -File ".relay/reports/NNN-<slug>.md" -Agent validator -TimeoutSec 1200
 ```
