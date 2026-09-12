@@ -433,6 +433,49 @@ function Get-AgentProcessName($state, $agentName) {
     return 'agy.exe'
 }
 
+# How long a liveness probe may take, by who is answering it.
+#
+# Test-AgentResponsive's own 75s default was tuned for agy on Gemini Flash. An
+# opencode fallback pane is materially slower, and a cold one slower still: the
+# launcher sends the charter load first, so the probe queues behind a file read
+# before the model even starts on it.
+#
+# Observed 2026-09-10 on the bash side: a scout failed over to opencode answered its
+# first probe in 76s against the 75s default. It was marked unhealthy by about a
+# second, autopilot logged "NO SCOUT EVIDENCE ... validating degraded", and two
+# consecutive tasks were graded with no independent evidence. The fallback had done
+# its job; the gate had not.
+#
+# Raising the ceiling is nearly free. Test-AgentResponsive returns the moment the
+# token lands, so a healthy pane costs exactly what it did before; only a genuinely
+# dead one waits out the budget, and every caller treats that as fatal anyway.
+#
+# Reads the provider defensively: at 'up' time $state is still an ordered hashtable
+# rather than the PSObject that Get-State returns, and panes always launch on agy
+# there anyway.
+function Get-ProbeBudget($state, $agentName) {
+    $p = 'agy'
+    if ($state) {
+        $providers = $null
+        if ($state -is [System.Collections.IDictionary]) {
+            if ($state.Contains('providers')) { $providers = $state['providers'] }
+        }
+        elseif ($state.PSObject.Properties.Name -contains 'providers') {
+            $providers = $state.providers
+        }
+        if ($providers) {
+            if ($providers -is [System.Collections.IDictionary]) {
+                if ($providers.Contains($agentName)) { $p = $providers[$agentName] }
+            }
+            elseif ($providers.PSObject.Properties.Name -contains $agentName) {
+                $p = $providers.$agentName
+            }
+        }
+    }
+    if ($p -eq 'opencode') { return 240 }
+    return 150
+}
+
 function Get-PanePid($state, $agentName) {
     $paneId = Get-PaneId $state $agentName
     if (-not $paneId) { return $null }
@@ -1029,7 +1072,7 @@ if ($Command -eq 'up') {
             else { $bad += "$n : never reached its prompt" }
             continue
         }
-        if (Test-AgentResponsive $t) { Say "  $n : responding" }
+        if (Test-AgentResponsive $t (Get-ProbeBudget $state $n)) { Say "  $n : responding" }
         else { $bad += "$n : did not answer a liveness probe" }
     }
 
@@ -1206,7 +1249,7 @@ if ($Command -eq 'health') {
             continue
         }
 
-        if (Test-AgentResponsive $t) {
+        if (Test-AgentResponsive $t (Get-ProbeBudget $s $n)) {
             Write-Host "$line OK - answered$age" -ForegroundColor Green
         }
         else {
@@ -1350,7 +1393,8 @@ function Restart-Agents($s, $names, $deep, $providerOverride = '') {
     $bad = @()
     for ($i = 0; $i -lt $names.Count; $i++) {
         $n = $names[$i]; $t = $targets[$i]
-        if (Test-AgentResponsive $t) { Say "  $n : responding"; continue }
+        $probeTo = Get-ProbeBudget $s $n
+        if (Test-AgentResponsive $t $probeTo) { Say "  $n : responding"; continue }
 
         # A pane that faulted is genuinely broken - do not spend a second probe on it.
         $fault = Get-PaneFault $t
@@ -1359,8 +1403,8 @@ function Restart-Agents($s, $names, $deep, $providerOverride = '') {
         # No answer and no fault is ambiguous: either the agent is wedged, or the first
         # probe landed a moment before the TUI began accepting input and was swallowed.
         # A second probe into a pane that has certainly drawn by now separates the two.
-        Say "  $n : no answer to the first probe - retrying once"
-        if (Test-AgentResponsive $t) { Say "  $n : responding" } else { $bad += $n }
+        Say "  $n : no answer within ${probeTo}s - retrying once"
+        if (Test-AgentResponsive $t $probeTo) { Say "  $n : responding" } else { $bad += $n }
     }
     return $bad
 }
@@ -1850,7 +1894,11 @@ function Invoke-Keepalive($state, $agentName, $logPath) {
     $t = Get-PaneTarget $state $agentName
     # Never interrupt an agent mid-task. The mutator especially is usually working.
     if (Test-PaneBusy $t) { return }
-    if (Test-AgentResponsive $t 45) { return }
+    # This one recycles the pane on failure, so a budget that is merely tight does not
+    # report a slow agent - it restarts a working one, repeatedly, for as long as the
+    # wait lasts. It was 45s flat, which an opencode pane can exceed while perfectly
+    # healthy. Same budget as everywhere else now.
+    if (Test-AgentResponsive $t (Get-ProbeBudget $state $agentName)) { return }
     Write-RunLog $logPath "keepalive: $agentName did not answer - recycling it now"
     Restart-Agents $state @($agentName) $false | Out-Null
 }
@@ -1866,6 +1914,29 @@ function Invoke-Recycle($state, $agentName, $logPath, $maxHours) {
     Write-RunLog $logPath "recycling $agentName preemptively (up $([math]::Round($hrs,1))h)"
     $bad = Restart-Agents $state @($agentName) $false
     if ($bad -and $bad.Count -gt 0) { Write-RunLog $logPath "WARNING: $agentName did not come back cleanly" }
+}
+
+# Is this pane allowed to fall to its opencode free-model launcher right now?
+# Returns 'opencode' or ''. Only executor/scout/mutator (never the validator, which is
+# Claude by design), only from agy (an opencode pane erroring falls through to a plain
+# restart, which stays on opencode via $state.providers), only if a launcher actually
+# got built at 'up' time, and only if the user has not opted out.
+#
+# Factored out because exhausted agy quota can arrive at EITHER restart path in
+# Invoke-Phase: as a fault (the quota line is on screen) or as a stall (agy keeps
+# spinning and prints nothing for minutes). Both need this same test.
+function Get-OcFallbackEligible($state, $agentName) {
+    if ($env:RELAY_NO_OPENCODE_FALLBACK) { return '' }
+    if (-not (@('executor','scout','mutator') -contains $agentName)) { return '' }
+    $curProvider = 'agy'
+    if ($state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) {
+        $curProvider = $state.providers.$agentName
+    }
+    if ($curProvider -ne 'agy') { return '' }
+    $ocLauncher = $null
+    if ($state.ocLaunchers) { $ocLauncher = $state.ocLaunchers.$agentName }
+    if ($ocLauncher -and (Test-Path $ocLauncher)) { return 'opencode' }
+    return ''
 }
 
 function Assert-AgentReady($state, $agentName, $logPath) {
@@ -1886,13 +1957,9 @@ function Assert-AgentReady($state, $agentName, $logPath) {
     # fallback launcher actually got built at 'up' time, and only if the user has not
     # opted out with RELAY_NO_OPENCODE_FALLBACK.
     $providerArg = ''
-    if ($agentName -ne 'validator' -and $trouble -like '*quota likely exhausted*' -and -not $env:RELAY_NO_OPENCODE_FALLBACK) {
-        $curProvider = 'agy'
-        if ($state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) { $curProvider = $state.providers.$agentName }
-        $ocLauncher = $null
-        if ($state.ocLaunchers) { $ocLauncher = $state.ocLaunchers.$agentName }
-        if ($curProvider -eq 'agy' -and $ocLauncher -and (Test-Path $ocLauncher)) {
-            $providerArg = 'opencode'
+    if ($trouble -like '*quota likely exhausted*') {
+        $providerArg = Get-OcFallbackEligible $state $agentName
+        if ($providerArg) {
             Write-RunLog $logPath "$agentName trouble: $trouble - falling back to opencode free model instead of retrying agy"
         }
     }
@@ -2051,11 +2118,36 @@ function Invoke-Phase($state, $agentName, $taskPath, $artifactPath, $timeoutSec,
                 return 'agent-down'
             }
             $script:RestartBudget[$agentName] = $left - 1
-            Write-RunLog $logPath "restarting stalled $agentName ($left restart(s) were left)"
-            $bad = Restart-Agents $state @($agentName) $false
+            # An exhausted agy account reaches here rather than the fault check below: the
+            # pane stops writing while agy still shows a busy spinner, and 'Individual quota
+            # reached' only lands on screen minutes later. So ask for the fault explicitly and
+            # route to opencode exactly as Assert-AgentReady would - a restart onto the same
+            # exhausted account just reproduces the stall.
+            $sprov = ''
+            if ((Get-AgentTrouble $state $agentName) -like '*quota likely exhausted*') {
+                $sprov = Get-OcFallbackEligible $state $agentName
+            }
+            if ($sprov) {
+                Write-RunLog $logPath "restarting stalled $agentName on opencode - agy quota exhausted ($left restart(s) were left)"
+            }
+            else {
+                Write-RunLog $logPath "restarting stalled $agentName ($left restart(s) were left)"
+            }
+            $bad = Restart-Agents $state @($agentName) $false $sprov
             if ($bad -and $bad.Count -gt 0) {
-                Write-RunLog $logPath "$agentName did not come back cleanly after a stall"
-                return 'agent-down'
+                # A freshly restarted pane that cannot answer either is the signature of an
+                # exhausted account rather than a bad pane - new agy, same empty quota. Spend
+                # one try on opencode before writing the lane off, since 'agent-down' here
+                # stops the whole run.
+                $sprov2 = Get-OcFallbackEligible $state $agentName
+                if ($sprov2) {
+                    Write-RunLog $logPath "$agentName did not come back on agy - falling it to opencode free model"
+                    $bad = Restart-Agents $state @($agentName) $false $sprov2
+                }
+                if ($bad -and $bad.Count -gt 0) {
+                    Write-RunLog $logPath "$agentName did not come back cleanly after a stall"
+                    return 'agent-down'
+                }
             }
             continue
         }
