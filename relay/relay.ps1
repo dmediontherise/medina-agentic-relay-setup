@@ -158,6 +158,29 @@ function Send-Line($target, $line) {
 # So: never infer health from the idle chrome. Match faults explicitly, and prove
 # liveness by making the agent answer.
 
+# The settle delay after dismissing a modal is load-bearing, not politeness.
+#
+# Every caller of Clear-BlockingPrompts classifies the pane IMMEDIATELY afterwards,
+# and Get-PaneFault reads the SCREEN. A modal overlays whatever the agent last
+# printed, so while the survey is up the quota banner underneath it is not on
+# screen. Capture before agy has repainted and Get-PaneFault sees neither the modal
+# nor the banner and returns $null - the pane is then classified healthy (or merely
+# unresponsive), which is a far worse answer than "blocked".
+#
+# That misclassification is what silently defeats the opencode fallback:
+# Assert-AgentReady selects the opencode route by matching the fault string
+# 'quota likely exhausted'. A $null fault never matches, so a quota-dead pane gets
+# dispatched work, stalls, and the stall path (matching the same string) misses it a
+# second time and restarts it onto the SAME exhausted agy.
+#
+# Observed 2026-09-11 on the bash side: health printed "mutator BLOCKED -> cleared
+# agy feedback survey" then "mutator UNRESPONSIVE", while the quota banner was
+# plainly on that pane seconds later. 600ms was not enough for agy to repaint.
+# Override with RELAY_REPAINT_SETTLE (seconds, matching relay.sh's knob).
+$script:RepaintSettleMs = if ($env:RELAY_REPAINT_SETTLE) {
+    [int]([double]$env:RELAY_REPAINT_SETTLE * 1000)
+} else { 2500 }
+
 # Blocking prompts we know how to clear ourselves. Each is a modal that swallows
 # input, so a dispatched instruction is simply absorbed and never acted on.
 $script:ClearablePrompts = @(
@@ -254,7 +277,7 @@ function Clear-BlockingPrompts($target) {
     foreach ($p in $script:ClearablePrompts) {
         if (Test-PaneMatch $txt $p.Pattern) {
             psmux send-keys -t $target $p.Key | Out-Null
-            Start-Sleep -Milliseconds 600
+            Start-Sleep -Milliseconds $script:RepaintSettleMs
             return $p.What
         }
     }

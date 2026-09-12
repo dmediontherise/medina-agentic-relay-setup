@@ -170,16 +170,36 @@ BUSY_PAT='esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|
 
 # Blocking modals we know how to clear. Each swallows input, so a dispatched
 # instruction is absorbed and never acted on.
+# The settle delay after dismissing a modal is load-bearing, not politeness.
+#
+# Every caller of this function classifies the pane IMMEDIATELY afterwards, and
+# pane_fault reads the SCREEN. A modal overlays whatever the agent last printed,
+# so while the survey is up the quota banner underneath it is not on screen. If
+# we capture before agy has repainted, pane_fault sees neither the modal nor the
+# banner and returns empty - the pane is then classified healthy (or merely
+# unresponsive), which is a far worse answer than "blocked".
+#
+# That misclassification is what silently defeats the opencode fallback:
+# assert_agent_ready selects the opencode route by matching the fault string
+# '*quota likely exhausted*'. An empty fault never matches, so a quota-dead pane
+# gets dispatched work, stalls, and then the stall path (which matches the same
+# string) misses it a second time and restarts it onto the SAME exhausted agy.
+#
+# Observed 2026-09-11: health printed "mutator BLOCKED -> cleared agy feedback
+# survey" then "mutator UNRESPONSIVE", while the quota banner was plainly on that
+# pane seconds later. 0.6s was not enough for agy to repaint.
+RELAY_REPAINT_SETTLE="${RELAY_REPAINT_SETTLE:-2.5}"
+
 clear_blocking_prompts() {
   local target="$1" txt
   txt="$(pane_text "$target")"
   if pane_match "$txt" 'trust (the contents of this|this folder)'; then
-    tmux send-keys -t "$target" Enter; sleep 0.6; printf 'folder-trust prompt'; return 0
+    tmux send-keys -t "$target" Enter; sleep "$RELAY_REPAINT_SETTLE"; printf 'folder-trust prompt'; return 0
   fi
   # agy periodically asks for CLI feedback; it blocks the input line exactly like
   # the trust gate does.
   if pane_match "$txt" "How's the CLI experience so far"; then
-    tmux send-keys -t "$target" 0; sleep 0.6; printf 'agy feedback survey'; return 0
+    tmux send-keys -t "$target" 0; sleep "$RELAY_REPAINT_SETTLE"; printf 'agy feedback survey'; return 0
   fi
   return 0
 }
