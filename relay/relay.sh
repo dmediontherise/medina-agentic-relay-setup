@@ -106,6 +106,28 @@ agent_proc_name() {
   esac
 }
 
+# How long a liveness probe may take, by who is answering it.
+#
+# agent_responsive's own 75s default was tuned for agy on Gemini Flash. An opencode
+# fallback pane is materially slower, and a cold one slower still: the launcher sends
+# the charter load first ("Read .relay/house-style.md and ..."), so the probe queues
+# behind a file read before the model even starts on it.
+#
+# Observed 2026-09-10: a scout failed over to opencode answered its first probe in 76s
+# against the 75s default. It was marked unhealthy by about a second, autopilot logged
+# "NO SCOUT EVIDENCE ... validating degraded", and two consecutive tasks were graded
+# with no independent evidence. The fallback had done its job; the gate had not.
+#
+# Raising the ceiling is nearly free. agent_responsive returns the moment the token
+# lands, so a healthy pane costs exactly what it did before; only a genuinely dead one
+# waits out the budget, and every caller treats that as fatal anyway.
+probe_budget() {
+  case "$(agent_proc_name "$1")" in
+    opencode) printf '240' ;;
+    *)        printf '150' ;;
+  esac
+}
+
 # Clear whatever is sitting in the agent's input line before typing, then send
 # the payload literally and press Enter separately. Agent TUIs routinely leave
 # ghost text in the prompt; without the C-u your instruction is appended to it.
@@ -799,7 +821,7 @@ cmd_up() {
       else bad="$bad $n"; fi
       continue
     fi
-    if agent_responsive "$t"; then say "  $n : responding"; else bad="$bad $n"; fi
+    if agent_responsive "$t" "$(probe_budget "$n")"; then say "  $n : responding"; else bad="$bad $n"; fi
   done
 
   if [ -n "$(printf '%s' "$bad" | tr -d ' ')" ]; then
@@ -939,7 +961,7 @@ cmd_health() {
       continue
     fi
 
-    if agent_responsive "$t"; then
+    if agent_responsive "$t" "$(probe_budget "$n")"; then
       printf '  %-10s \033[32mOK - answered%s\033[0m\n' "$n" "$age"
     else
       printf '  %-10s \033[31mUNRESPONSIVE - no answer to a liveness probe%s\033[0m\n             recover with: relay.sh restart -a %s\n' "$n" "$age" "$n"
@@ -1025,12 +1047,21 @@ restart_agents() {
   # restarted to fix - observed on a long-lived validator pane that came back
   # "booted" and then silently swallowed every message sent to it. If a restart
   # does not fix an agent, go to down/up rather than restarting the pane again.
+  # A pane restarted onto its opencode fallback is the slowest case this probe sees -
+  # cold, and answering the charter load before it ever reaches the probe. See
+  # probe_budget for the incident that set these numbers.
   RESTART_BAD=""
   local i=0
   for n in $names; do
     i=$((i+1))
     local tgt; tgt="$(printf '%s' "$targets" | awk -v k="$i" '{print $k}')"
-    if agent_responsive "$tgt"; then say "  $n : responding"; else RESTART_BAD="$RESTART_BAD $n"; fi
+    local probe_to; probe_to="$(probe_budget "$n")"
+    if agent_responsive "$tgt" "$probe_to"; then
+      say "  $n : responding"
+    else
+      say "  $n : no answer within ${probe_to}s"
+      RESTART_BAD="$RESTART_BAD $n"
+    fi
   done
 }
 
@@ -1426,7 +1457,11 @@ keepalive() {
   [ "$n" = "validator" ] && return 0
   t="$(pane_for "$n")"; [ -n "$t" ] || return 0
   pane_busy "$t" && return 0
-  agent_responsive "$t" 45 && return 0
+  # This one recycles the pane on failure, so a budget that is merely tight does not
+  # report a slow agent - it restarts a working one, repeatedly, for as long as the
+  # wait lasts. It was 45s flat, which an opencode pane can exceed while perfectly
+  # healthy. Same budget as everywhere else now.
+  agent_responsive "$t" "$(probe_budget "$n")" && return 0
   run_log "keepalive: $n did not answer - recycling it now"
   restart_agents "$n" || true
 }
@@ -1475,6 +1510,26 @@ orphan_file()   { printf '%s/.relay/health/.orphaned' "$WORKSPACE"; }
 orphan_record() { mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true; printf '%s\n' "$1" >> "$(orphan_file)"; }
 orphan_all()    { [ -f "$(orphan_file)" ] && cat "$(orphan_file)" 2>/dev/null || true; }
 
+# Is this lane eligible to fall to its opencode free-model launcher? Prints
+# 'opencode' when yes, nothing when no.
+#
+# Single source of truth for the fallback decision, because a lane that has run out
+# of agy quota can arrive at EITHER restart path in invoke_phase: as a fault (the
+# quota line is on screen) or as a stall (agy keeps spinning and prints nothing for
+# minutes). The stall path used to restart straight onto the same exhausted agy,
+# which is how a quota-exhausted run halted at agent-down on 2026-09-11 with a
+# perfectly good opencode launcher sitting unused.
+oc_fallback_eligible() {
+  local n="$1" upper cur_provider oc_launcher
+  [ -n "${RELAY_NO_OPENCODE_FALLBACK:-}" ] && return 0
+  case "$n" in executor|scout|mutator) ;; *) return 0 ;; esac
+  upper="$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]')"
+  eval "cur_provider=\${PROVIDER_$upper:-agy}"
+  eval "oc_launcher=\${L_${upper}_OC:-}"
+  [ "$cur_provider" = "agy" ] && [ -n "$oc_launcher" ] && [ -f "$oc_launcher" ] && printf 'opencode'
+  return 0
+}
+
 assert_agent_ready() {
   local n="$1" trouble left provider_arg=""
   trouble="$(agent_trouble "$n")"
@@ -1493,18 +1548,10 @@ assert_agent_ready() {
   # to the plain restart below, which stays on opencode via PROVIDER_<NAME>), only
   # if a fallback launcher actually got built at 'up' time, and only if the user
   # has not opted out with RELAY_NO_OPENCODE_FALLBACK.
-  case "$n:$trouble" in
-    executor:*"quota likely exhausted"*|scout:*"quota likely exhausted"*|mutator:*"quota likely exhausted"*)
-      if [ -z "${RELAY_NO_OPENCODE_FALLBACK:-}" ]; then
-        local upper; upper="$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]')"
-        local cur_provider oc_launcher
-        eval "cur_provider=\${PROVIDER_$upper:-agy}"
-        eval "oc_launcher=\${L_${upper}_OC:-}"
-        if [ "$cur_provider" = "agy" ] && [ -n "$oc_launcher" ] && [ -f "$oc_launcher" ]; then
-          provider_arg="opencode"
-          run_log "$n trouble: $trouble - falling back to opencode free model instead of retrying agy"
-        fi
-      fi
+  case "$trouble" in
+    *"quota likely exhausted"*)
+      provider_arg="$(oc_fallback_eligible "$n")"
+      [ -n "$provider_arg" ] && run_log "$n trouble: $trouble - falling back to opencode free model instead of retrying agy"
       ;;
   esac
 
@@ -1646,11 +1693,35 @@ invoke_phase() {
         printf 'agent-down'; return 0
       fi
       budget_dec "$agent"
-      run_log "restarting stalled $agent ($left restart(s) were left)"
-      restart_agents "$agent" || true
+      # An exhausted agy account reaches here rather than the fault check below: the
+      # pane stops writing while agy still shows a busy spinner, and 'Individual quota
+      # reached' only lands on screen minutes later. So ask for the fault explicitly and
+      # route to opencode exactly as assert_agent_ready would - a restart onto the same
+      # exhausted account just reproduces the stall.
+      local sprov=""
+      case "$(agent_trouble "$agent")" in
+        *"quota likely exhausted"*) sprov="$(oc_fallback_eligible "$agent")" ;;
+      esac
+      if [ -n "$sprov" ]; then
+        run_log "restarting stalled $agent on opencode - agy quota exhausted ($left restart(s) were left)"
+      else
+        run_log "restarting stalled $agent ($left restart(s) were left)"
+      fi
+      restart_agents "$agent" 0 "$sprov" || true
       if [ -n "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
-        run_log "$agent did not come back cleanly after a stall"
-        printf 'agent-down'; return 0
+        # A freshly restarted pane that cannot answer either is the signature of an
+        # exhausted account rather than a bad pane - new agy, same empty quota. Spend
+        # one try on opencode before writing the lane off, since 'agent-down' here
+        # stops the whole run.
+        local sprov2; sprov2="$(oc_fallback_eligible "$agent")"
+        if [ -n "$sprov2" ]; then
+          run_log "$agent did not come back on agy - falling it to opencode free model"
+          restart_agents "$agent" 0 "$sprov2" || true
+        fi
+        if [ -n "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
+          run_log "$agent did not come back cleanly after a stall"
+          printf 'agent-down'; return 0
+        fi
       fi
       continue
     fi
