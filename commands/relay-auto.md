@@ -105,6 +105,10 @@ Jev is installed. It does four things:
 - keeps mutation reports with no survivors out of the paid end-of-run sweep;
 - skips the mutation lane for docs/images-only changes.
 
+It also runs a **pane shadow**: every 2 minutes it logs Jev's guess about the state of the
+pane autopilot is waiting on, and nothing acts on the guess. It sends screen text to
+TypeSafe. Set `RELAY_JEV_PANE_SHADOW=0` if the user's terminal output must stay local.
+
 It never stands in for the validator's grade. Every decision is logged to
 `<workspace>/.relay/jev/decisions.jsonl` - cite it when you report a Jev-answered BLOCKED.
 

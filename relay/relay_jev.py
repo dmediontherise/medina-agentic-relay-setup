@@ -9,8 +9,15 @@ prints the conservative answer, so a Jev outage degrades to the pre-Jev behaviou
   sweep    <workspace> <mutation.md>... -> KEEP <paths...> | NONE                (before the paid mutation sweep)
   mutation <workspace> <base>           -> MUTATE | SKIP <reason>                (before the mutator)
   blocked  <workspace> <base>           -> ANSWERED <label> | ASK                (executor reported BLOCKED)
+  pane     <workspace> <agent> <artifact> <elapsed_s> <progress_age_s> <screen.txt> <wait_id>
+                                        -> LOGGED <state>                          (shadow mode: no action)
 
-Only `verdict` and `blocked` call Jev; `sweep` and `mutation` are deterministic rules that
+`pane` is the shadow-mode pane classifier: autopilot samples the screen of the agent it
+is waiting on, Jev names the state it looks to be in, and the answer is only logged - the
+relay never acts on it. Each wait's real outcome is logged next to it, and
+relay/jev-calibration/eval_pane_shadow.py scores the two against each other.
+
+Only `verdict`, `blocked` and `pane` call Jev; `sweep` and `mutation` are deterministic rules that
 were safer than Jev on the historical data. Calibration against past runs, and the gate
 that was tried and rejected (Jev predicting the validator's verdict - AUC 0.61), are in
 relay/jev-calibration.md in the tracked repo. Every decision is appended to
@@ -194,6 +201,37 @@ def blocked(ws, base):
     return f"ANSWERED {d['choice']}", d
 
 
+# --------------------------------------------------------- pane (shadow) ---
+PANE_STATES = {
+    "working": "Actively producing: a spinner, an elapsed-time or progress line, tool calls running, output streaming",
+    "finished-no-artifact": "Its turn is over and nothing is pending: it printed a DONE line or sits at an EMPTY "
+                            "input prompt (a bare `>` or `❯`), yet the expected artifact is not there",
+    "unsent-input": "A message sits typed in the input box after the prompt marker but was never submitted",
+    "waiting-for-input": "A specific question, y/n confirmation, approval, trust or permission dialog is on "
+                         "screen and needs an answer",
+    "error": "An error, stack trace, crash, auth or sign-in failure, or a bare shell with no agent in it",
+    "quota": "A quota, rate-limit or usage-limit message is blocking it",
+}
+
+
+def pane(ws, agent, artifact, elapsed_s, progress_age_s, screen_file, wait_id):
+    screen = read(screen_file)
+    # The tail matters most: that is where the prompt, a spinner or an error banner sits.
+    screen = screen[-3000:] if len(screen) > 3000 else screen
+    st = {"agent": agent, "expected_artifact": artifact,
+          "minutes_waiting": round(int(elapsed_s) / 60, 1),
+          "minutes_since_any_file_was_written": round(int(progress_age_s) / 60, 1),
+          "screen_tail": screen}
+    a = jev_call(st, {"s": {"type": "choice", "criteria": PANE_STATES,
+                            "instructions": "This is the terminal screen of an AI coding agent that the relay "
+                                            "is waiting on to write `expected_artifact`. Which state is the "
+                                            "agent in right now?"}})["answers"]["s"]
+    return f"LOGGED {a.get('choice')}", {"wait_id": wait_id, "agent": agent, "artifact": artifact,
+                                         "elapsed_s": int(elapsed_s), "progress_age_s": int(progress_age_s),
+                                         "state": a.get("choice"), "confidence": a.get("confidence"),
+                                         "probabilities": a.get("probabilities"), "screen": str(screen_file)}
+
+
 # ----------------------------------------------------------------- main ---
 SAFE = {"verdict": "UNKNOWN", "mutation": "MUTATE", "blocked": "ASK"}
 
@@ -209,6 +247,8 @@ def main(argv):
             decision, info = mutation(ws, args[0])
         elif cmd == "blocked":
             decision, info = blocked(ws, args[0])
+        elif cmd == "pane":
+            decision, info = pane(ws, *args[:6])
         else:
             print(f"unknown subcommand {cmd}", file=sys.stderr)
             return 2

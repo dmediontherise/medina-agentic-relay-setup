@@ -192,7 +192,8 @@ and is forbidden by its charter from writing to the others.
 │                          the expectations it derived from the spec before any code
 ├── mutants/<task>/        Mutator's isolated worktree snapshot per task
 ├── logs/                  autopilot run logs
-├── jev/decisions.jsonl    every Jev gate decision, when RELAY_JEV=1
+├── jev/decisions.jsonl    every Jev gate decision and pane-shadow answer, when RELAY_JEV=1
+├── jev/panes/<wait>/      screen samples behind those answers (pane shadow)
 ├── launch/                generated pane launcher scripts
 ├── STOP                   touch this to halt an autopilot run cleanly
 └── executor|scout|mutator|validator.md   charters, copied in at `up`
@@ -554,6 +555,17 @@ used to either stop the run or spend a validator turn:
 | Report with no `VERDICT:` line | re-read 30s, then stop (it used to count as a pass) | Jev classifies the body: FAIL, or a ≥0.9-confidence pass recorded as PASS-WITH-CONCERNS |
 | Mutation reports with no survivors | go to the paid end-of-run sweep | dropped; the sweep is skipped if nothing is left |
 | Docs/images-only change | mutation lane runs | mutation skipped |
+
+**Pane shadow (logging only).** With `RELAY_JEV=1`, every 2 minutes while autopilot waits
+on an agent, it saves that pane's screen to `.relay/jev/panes/` and asks Jev, detached, which
+state it looks to be in: working, finished without its artifact, unsent input, waiting on a
+question, error or quota. When the wait ends, its real outcome (ok, stalled, timeout, fault)
+is logged beside those answers. **Nothing acts on them.** Stalls and 30-minute timeouts are
+the largest dead time in the run logs, and this collects the evidence for whether Jev could
+name a dead pane minutes sooner, before anything is allowed to restart one on its say-so.
+Score it with `python -I relay/jev-calibration/eval_pane_shadow.py <workspace>...` (Jev venv).
+`RELAY_JEV_PANE_EVERY` sets the interval and `RELAY_JEV_PANE_SHADOW=0` turns it off. It sends
+terminal screen text to TypeSafe, so turn it off for work whose output must stay local.
 
 Jev does **not** grade tasks. That was measured first and rejected: it could not tell the
 validator's FAILs from its passes (AUC 0.61 over 97 past tasks). The numbers behind every
@@ -940,7 +952,7 @@ relay/
 ├── relay.sh               macOS / Linux / tmux control plane
 ├── relay_jev.py           Jev gates helper, called by both (opt-in: RELAY_JEV=1)
 ├── jev-calibration.md     what each gate was measured against before it shipped
-├── jev-calibration/       the measurement script, to re-run when Jev's model changes
+├── jev-calibration/       measurement scripts: verdict recovery, and the pane-shadow scorer
 └── charters/              agent operating contracts
     ├── executor.md
     ├── scout.md

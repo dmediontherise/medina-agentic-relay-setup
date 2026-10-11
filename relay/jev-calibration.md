@@ -42,5 +42,16 @@ Executor 7.6h, scout + validator 6.1h. A large share of the rest is dead time: s
 of the gates above touch that. The next candidate is a Jev classifier on the working pane's
 screen ("working / idle at prompt without the artifact / waiting for input / error"),
 which could catch a dead pane in minutes instead of at the 10-minute stall or the
-30-minute timeout. It has no historical pane captures to calibrate against, so it should
-ship in shadow mode (log only) first.
+30-minute timeout. It has no historical pane captures to calibrate against, so it shipped in
+shadow mode on 2026-10-11: autopilot logs Jev's guess about the waited-on pane every 2 minutes
+and the wait's real outcome, and acts on neither. `jev-calibration/eval_pane_shadow.py`
+reports, per confidence threshold, how many bad waits Jev flagged and how many minutes early,
+against how many successful waits it would have wrongly flagged. Only that table, after
+enough real runs, should decide whether a gate ever acts on it.
+
+First look at four live panes from the session that was up on 2026-10-11: two opencode
+panes that had printed DONE and an agy pane idle at an empty prompt all read as
+`finished-no-artifact` (once the labels said an empty prompt is not a pending question).
+The fourth, a Claude pane with a dispatch line sitting typed but unsent, also read as
+`finished-no-artifact` rather than `unsent-input`. That is an open question for the data
+to settle, not something tuned away on one screen.

@@ -1642,6 +1642,8 @@ assert_agent_ready() {
 #   .relay/health   keepalive nonce files, written by the panes that are NOT working
 #   .relay/mutants  the mutation lane runs in parallel; its writes say nothing about
 #                   the agent actually being waited on
+#   .relay/jev      Jev gate decisions and pane-shadow screen samples, written by autopilot
+#                   itself during the wait - the same trap as .relay/logs
 # Heavy vendor trees are skipped for speed, not correctness.
 #
 # `find -newer <marker>` rather than a newest-mtime scan: BSD find on macOS has no
@@ -1656,19 +1658,68 @@ progress_seen() {
       -o -path "$WORKSPACE/.relay/logs" \
       -o -path "$WORKSPACE/.relay/health" \
       -o -path "$WORKSPACE/.relay/mutants" \
+      -o -path "$WORKSPACE/.relay/jev" \
       -o -name node_modules -o -name .venv -o -name venv \) -prune \
       -o -type f -newer "$m" -print 2>/dev/null | head -1)" ]
+}
+
+# --- Jev pane shadow (logging only) ------------------------------------------
+# While a wait is in progress, every RELAY_JEV_PANE_EVERY seconds (default 120) the
+# screen of the agent being waited on is saved under .relay/jev/panes/<wait>/ and Jev is
+# asked which state it looks to be in (working / finished-no-artifact / unsent-input /
+# waiting-for-input / error / quota). When the wait ends, its real outcome is logged next
+# to those answers. NOTHING here changes what the relay does: the point is to measure,
+# on real runs, whether Jev would have named a dead pane minutes before the 10-minute
+# stall check or the 30-minute timeout - the largest dead time in the run logs - before
+# anything is allowed to act on it. relay/jev-calibration/eval_pane_shadow.py scores it.
+#
+# On with RELAY_JEV=1; RELAY_JEV_PANE_SHADOW=0 turns just this off. The Jev call runs
+# detached with every fd redirected, so it can never delay the wait or hold open the
+# command substitution that invoke_phase reads wait_artifact's answer through. Screen
+# text is sent to TypeSafe, so leave it off for work whose terminal output must stay local.
+pane_shadow_on() { jev_on && [ "${RELAY_JEV_PANE_SHADOW:-1}" != "0" ]; }
+
+pane_shadow_sample() {
+  local agent="$1" path="$2" wid="$3" el="$4" pa="$5" dir f
+  dir="$WORKSPACE/.relay/jev/panes/$wid"
+  mkdir -p "$dir" 2>/dev/null || return 0
+  f="$dir/$(printf '%05d' "$el").txt"
+  pane_text "$(pane_for "$agent")" 40 > "$f" 2>/dev/null || return 0
+  ( timeout 90 "$JEV_PY" -I "$JEV_HELPER" pane "$WORKSPACE" "$agent" "$(basename "$path")" \
+      "$el" "$pa" "$f" "$wid" </dev/null >/dev/null 2>&1 & ) </dev/null >/dev/null 2>&1
+  return 0
+}
+
+pane_shadow_outcome() {
+  local wid="$1" agent="$2" path="$3" result="$4" el="$5"
+  mkdir -p "$WORKSPACE/.relay/jev" 2>/dev/null || return 0
+  printf '{"t": "%s", "kind": "pane_outcome", "wait_id": "%s", "agent": "%s", "artifact": "%s", "result": "%s", "elapsed_s": %d}\n' \
+    "$(date '+%Y-%m-%d %H:%M:%S')" "$wid" "$agent" "$(basename "$path")" \
+    "$(printf '%s' "$result" | tr -d '"\\' | cut -c1-120)" "$el" \
+    >> "$WORKSPACE/.relay/jev/decisions.jsonl" 2>/dev/null || true
 }
 
 # Block until an artifact lands, watching the working agent for faults and
 # keeping the other agy panes warm.
 # Prints ok|stopped|timeout|stalled|fault:<reason>.
 wait_artifact() {
+  local r start
+  start="$(date +%s)"
+  PANE_SHADOW_WID="$3-$(basename "$1" .md)-$start"
+  r="$(wait_artifact_core "$@")"
+  pane_shadow_on && pane_shadow_outcome "$PANE_SHADOW_WID" "$3" "$1" "$r" "$(( $(date +%s) - start ))"
+  printf '%s' "$r"
+}
+
+wait_artifact_core() {
   local path="$1" timeout="$2" agent="$3" idle="$4" stall_min="${5:-10}"
   local deadline last_touch last_health last_probe last_progress now trouble ia
+  local shadow=0 shadow_every="${RELAY_JEV_PANE_EVERY:-120}" last_shadow start_ts
+  pane_shadow_on && shadow=1
   deadline=$(( $(date +%s) + timeout ))
   last_touch="$(date +%s)"; last_health="$last_touch"
   last_probe="$last_touch"; last_progress="$last_touch"
+  last_shadow="$last_touch"; start_ts="$last_touch"
   mkdir -p "$WORKSPACE/.relay/health" 2>/dev/null || true
   : > "$(progress_marker)" 2>/dev/null || true
   while [ "$(date +%s)" -lt "$deadline" ]; do
@@ -1704,6 +1755,11 @@ wait_artifact() {
         run_log "$agent has written nothing for ${stall_min}m - stalled, not slow"
         printf 'stalled'; return 0
       fi
+    fi
+
+    if [ "$shadow" -eq 1 ] && [ $(( now - last_shadow )) -ge "$shadow_every" ]; then
+      last_shadow="$now"
+      pane_shadow_sample "$agent" "$path" "$PANE_SHADOW_WID" $(( now - start_ts )) $(( now - last_progress ))
     fi
 
     if [ $(( now - last_touch )) -ge 720 ]; then

@@ -2157,6 +2157,7 @@ function Get-ProgressStamp($state) {
         (Join-Path $ws '.relay\logs'),
         (Join-Path $ws '.relay\health'),
         (Join-Path $ws '.relay\mutants'),
+        (Join-Path $ws '.relay\jev'),       # Jev decisions and pane-shadow samples, written by autopilot itself
         (Join-Path $ws 'node_modules'),
         (Join-Path $ws '.venv'),
         (Join-Path $ws 'venv')
@@ -2176,7 +2177,61 @@ function Get-ProgressStamp($state) {
 
 # Block until an artifact lands, watching the working agent for faults and keeping the
 # other agy panes warm. Returns 'ok', 'stopped', 'timeout', 'stalled', or "fault:<reason>".
+# --- Jev pane shadow (logging only) - see the same block in relay.sh ----------------
+# Every RELAY_JEV_PANE_EVERY seconds (default 120) the screen of the agent being waited
+# on is saved under .relay\jev\panes\<wait>\ and Jev, run detached, names the state it
+# looks to be in. When the wait ends its real outcome is logged beside those answers.
+# Nothing here changes what the relay does. On with RELAY_JEV=1; RELAY_JEV_PANE_SHADOW=0
+# turns just this off. Screen text is sent to TypeSafe.
+function Test-PaneShadowOn { return [bool](Get-JevRunner) -and ($env:RELAY_JEV_PANE_SHADOW -ne '0') }
+
+function Start-PaneShadowSample($state, $agentName, $path, $waitId, $elapsedSec, $progressAgeSec) {
+    try {
+        $run = Get-JevRunner
+        if (-not $run) { return }
+        $dir = Join-Path $state.workspace ".relay\jev\panes\$waitId"
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $f = Join-Path $dir ('{0:D5}.txt' -f [int]$elapsedSec)
+        $txt = "$(Get-PaneText (Get-PaneTarget $state $agentName) 40)"
+        [System.IO.File]::WriteAllText($f, $txt, (New-Object System.Text.UTF8Encoding $false))
+        $gateArgs = @($state.workspace, $agentName, (Split-Path -Leaf $path), [int]$elapsedSec, [int]$progressAgeSec, $f, $waitId)
+        $all = @($run.pre) + @('pane')
+        foreach ($a in $gateArgs) { $all += $(if ($run.wsl) { ConvertTo-WslPath $a } else { "$a" }) }
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $run.exe
+        $psi.Arguments = ($all | ForEach-Object { ConvertTo-NativeArg $_ }) -join ' '
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        [System.Diagnostics.Process]::Start($psi) | Out-Null   # detached: never waited on
+    }
+    catch { }
+}
+
+function Write-PaneShadowOutcome($state, $waitId, $agentName, $path, $result, $elapsedSec) {
+    try {
+        $dir = Join-Path $state.workspace '.relay\jev'
+        New-Item -ItemType Directory -Force $dir | Out-Null
+        $rec = [ordered]@{ t = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss'); kind = 'pane_outcome'; wait_id = $waitId
+                           agent = $agentName; artifact = (Split-Path -Leaf $path); result = "$result"; elapsed_s = [int]$elapsedSec }
+        [System.IO.File]::AppendAllText((Join-Path $dir 'decisions.jsonl'), (($rec | ConvertTo-Json -Compress) + "`n"),
+                                        (New-Object System.Text.UTF8Encoding $false))
+    }
+    catch { }
+}
+
 function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAgents, $stallMin = 10) {
+    $start = Get-Date
+    $waitId = "$agentName-$([System.IO.Path]::GetFileNameWithoutExtension($path))-$([int][double]::Parse((Get-Date -UFormat %s)))"
+    $r = Wait-ArtifactCore $state $path $timeoutSec $agentName $logPath $idleAgents $stallMin $waitId
+    if (Test-PaneShadowOn) { Write-PaneShadowOutcome $state $waitId $agentName $path $r ((Get-Date) - $start).TotalSeconds }
+    return $r
+}
+
+function Wait-ArtifactCore($state, $path, $timeoutSec, $agentName, $logPath, $idleAgents, $stallMin, $waitId) {
+    $shadow       = Test-PaneShadowOn
+    $shadowEvery  = if ($env:RELAY_JEV_PANE_EVERY) { [int]$env:RELAY_JEV_PANE_EVERY } else { 120 }
+    $startTime    = Get-Date
+    $lastShadow   = Get-Date
     $deadline     = (Get-Date).AddSeconds($timeoutSec)
     $lastTouch    = Get-Date
     $lastHealth   = Get-Date
@@ -2226,6 +2281,11 @@ function Wait-Artifact($state, $path, $timeoutSec, $agentName, $logPath, $idleAg
                 Write-RunLog $logPath "$agentName has written nothing for ${stallMin}m - stalled, not slow"
                 return 'stalled'
             }
+        }
+
+        if ($shadow -and ((Get-Date) - $lastShadow).TotalSeconds -ge $shadowEvery) {
+            $lastShadow = Get-Date
+            Start-PaneShadowSample $state $agentName $path $waitId ((Get-Date) - $startTime).TotalSeconds ((Get-Date) - $lastProgress).TotalSeconds
         }
 
         if (((Get-Date) - $lastTouch).TotalMinutes -ge 12) {
