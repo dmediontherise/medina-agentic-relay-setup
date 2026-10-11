@@ -50,8 +50,19 @@ against how many successful waits it would have wrongly flagged. Only that table
 enough real runs, should decide whether a gate ever acts on it.
 
 First look at four live panes from the session that was up on 2026-10-11: two opencode
-panes that had printed DONE and an agy pane idle at an empty prompt all read as
-`finished-no-artifact` (once the labels said an empty prompt is not a pending question).
-The fourth, a Claude pane with a dispatch line sitting typed but unsent, also read as
-`finished-no-artifact` rather than `unsent-input`. That is an open question for the data
-to settle, not something tuned away on one screen.
+panes that had printed DONE, an agy pane idle at an empty prompt, and a Claude pane idle
+after its last grade all read as `finished-no-artifact` (once the labels said an empty
+prompt is not a pending question). All four were right.
+
+The Claude pane is worth a note, because it fooled the person checking Jev's answer before
+it fooled Jev. Its input box showed `❯ Grade this task: .relay/tasks/040-…`, which reads as
+a dispatch typed but never sent. It was not. It was Claude Code's prompt suggestion: ghost
+text drawn **dim** (`ESC[2m`) in an empty input box and cut off with `…`. Sending Ctrl+U
+changed nothing, and `tmux capture-pane -e` showed the dim attribute.
+
+That matters when scoring the shadow. The screen it sends Jev is a plain
+`tmux capture-pane -p` (`psmux capture-pane -p` on Windows), which drops text attributes, so Jev
+cannot tell ghost text from typed text either. An `unsent-input` answer on a Claude pane
+may be this case, so check the saved screen against the live pane with `-e` before
+counting it as a real stuck dispatch. If it turns out to be common, the fix is to capture
+with `-e` and mark dim runs before the screen goes to Jev, not to retune the labels.
