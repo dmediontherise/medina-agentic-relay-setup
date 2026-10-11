@@ -1381,6 +1381,24 @@ run_log() {
 
 stop_requested() { [ -f "$WORKSPACE/.relay/STOP" ]; }
 
+# --- Jev gates (opt-in: RELAY_JEV=1) ------------------------------------------
+# Jev (TypeSafe System One, installed by Jev-AI-Skill) answers small typed questions in
+# well under a second, at a fraction of a validator turn. relay_jev.py holds the parsing
+# and the calls; every gate there prints one decision word and, on any error, the answer
+# this script would have reached without Jev - so a Jev outage changes nothing.
+#
+# What is gated, and what was measured before it was (relay/jev-calibration.md):
+#   - a report with no VERDICT: line is classified instead of passing silently
+#   - executor BLOCKED with an Options list is answered instead of stopping the run
+#   - mutation reports with nothing to act on never reach the paid sweep
+#   - docs-only changes skip the mutation lane
+# What is NOT gated: the validator's verdict itself. Jev was tried as a stand-in on 97
+# past tasks and could not tell the validator's FAILs from its passes (AUC 0.61).
+JEV_PY="${RELAY_JEV_PYTHON:-$HOME/Jev-AI-Skill/.venv/bin/python}"
+JEV_HELPER="${RELAY_JEV_HELPER:-$RELAY_HOME/relay_jev.py}"
+jev_on() { [ "${RELAY_JEV:-0}" = "1" ] && [ -x "$JEV_PY" ] && [ -f "$JEV_HELPER" ]; }
+jev_gate() { timeout 90 "$JEV_PY" -I "$JEV_HELPER" "$@" 2>/dev/null | head -1; }
+
 # Tasks with no report yet, in id order. Never dispatch the unfilled seed
 # template: it states no requirements, can never earn a report, and would be
 # picked first on every pass forever.
@@ -1898,6 +1916,11 @@ cmd_autopilot() {
   deadline=$(( start_ts + budget_min * 60 ))
 
   run_log "autopilot start - budget ${budget_min}m, max ${max_cycles} cycles, mutation=$mutation_on"
+  if jev_on; then
+    run_log "Jev gates ON (verdict recovery, BLOCKED answers, sweep filter, docs-only mutation skip)"
+  elif [ "${RELAY_JEV:-0}" = "1" ]; then
+    run_log "RELAY_JEV=1 but Jev is not usable ($JEV_PY / $JEV_HELPER missing) - running without it"
+  fi
 
   while true; do
     if stop_requested;                      then stop_reason="stopped by .relay/STOP"; break; fi
@@ -1935,6 +1958,30 @@ cmd_autopilot() {
         done
       fi
       [ -z "$(printf '%s' "$outstanding" | tr -d ' ')" ] && break
+
+      # A report that says "no survivors" on a green baseline leaves the sweep nothing to
+      # decide, and the sweep is a paid validator turn with a 30m ceiling. Drop those
+      # before dispatching; if none are left, record them as reviewed exactly as a
+      # sweep's VERDICT: PASS would have, and skip the turn.
+      if jev_on; then
+        local sg kept dropped=0
+        sg="$(jev_gate sweep "$WORKSPACE" $outstanding)"
+        case "$sg" in
+          NONE|KEEP*)
+            kept=" ${sg#KEEP} "; [ "$sg" = "NONE" ] && kept=" "
+            for m in $outstanding; do
+              case "$kept" in *" $m "*) ;; *) basename "$m" .md >> "$seen_file"; dropped=$(( dropped + 1 )) ;; esac
+            done
+            outstanding="$(printf '%s' "${kept}" | sed 's/^ *//;s/ *$//')"
+            [ "$dropped" -gt 0 ] && run_log "Jev sweep filter: $dropped report(s) had no survivors on a green baseline - marked reviewed without a validator turn"
+            ;;
+        esac
+        if [ -z "$(printf '%s' "$outstanding" | tr -d ' ')" ]; then
+          summary="$summary
+| mutation sweep | skipped | nothing to act on (Jev sweep filter) |"
+          continue
+        fi
+      fi
 
       run_log "mutation sweep over $(printf '%s' "$outstanding" | wc -w | tr -d ' ') unreviewed report(s)"
       assert_agent_ready validator || { stop_reason="validator unavailable for the mutation sweep"; break; }
@@ -2083,6 +2130,24 @@ cmd_autopilot() {
     # covers the resumed and prefetched-result paths above, since all three
     # converge on the same result_p before this point.
     local exec_status; exec_status="$(get_exec_status "$result_p")"
+    # Many BLOCKED questions are a choice between readings the executor already spelled
+    # out (executor.md asks for them under ## Options). Jev picks one when it is
+    # confident AND the choice is not the owner's to make (irreversible, spends money,
+    # publishes, needs credentials). The answer is appended to the task as a
+    # Clarification - so the validator grades against it - the BLOCKED result is moved
+    # aside, and the same task goes straight back to the executor. Once per task: a
+    # second BLOCKED on it stops the run as before.
+    if [ "$exec_status" = "BLOCKED" ] && jev_on; then
+      local jb; jb="$(jev_gate blocked "$WORKSPACE" "$base")"
+      case "$jb" in
+        ANSWERED*)
+          run_log "$base : executor BLOCKED - Jev chose '$(printf '%s' "${jb#ANSWERED }" | cut -d' ' -f1)' (see the task's Clarification) - re-running the executor"
+          summary="$summary
+| $base | BLOCKED -> Jev answered | $(printf '%s' "${jb#ANSWERED }" | cut -d' ' -f1) |"
+          continue ;;
+        *) run_log "$base : Jev left the BLOCKED question to a human (${jb#ASK })" ;;
+      esac
+    fi
     if [ "$exec_status" = "BLOCKED" ]; then
       run_log "$base : executor reported BLOCKED - stopping instead of running it through scout/mutation/validation"
       summary="$summary
@@ -2091,7 +2156,16 @@ cmd_autopilot() {
     fi
 
     # The mutation lane starts here and is never waited on.
-    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ]; then
+    # Docs and images only: no test can pin a sentence, so a mutation pass would cost a
+    # pane, a snapshot and a slot in the end-of-run drain for a report with nothing in
+    # it. Markup and config are NOT skipped - html-only tasks produced real survivors.
+    local mskip=""
+    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ] && jev_on; then
+      local mg; mg="$(jev_gate mutation "$WORKSPACE" "$base")"
+      case "$mg" in SKIP*) mskip="${mg#SKIP }" ;; esac
+      [ -n "$mskip" ] && run_log "skipping mutation for $base - $mskip"
+    fi
+    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ] && [ -z "$mskip" ]; then
       if assert_agent_ready mutator; then
         local meth; meth="$(new_mutant_snapshot "$base" 2>/dev/null || printf 'failed')"
         if [ "$meth" = "failed" ]; then
@@ -2189,7 +2263,33 @@ cmd_autopilot() {
     fi
 
     local verdict; verdict="$(get_verdict "$report_p")"
+    # UNPARSED used to fall through the FAIL test below and count as a pass: 8 of 71
+    # graded cycles in the logs up to 2026-10-11, among them one whose
+    # report now opens with a perfectly good VERDICT line - it was read while still
+    # being written (wait_artifact returns 0.9s after the file appears). So: re-read
+    # for 30s, then let Jev classify the body, then stop for a human. Never pass it.
+    if [ "$verdict" = "UNPARSED" ]; then
+      local vi=0
+      while [ "$vi" -lt 6 ] && [ "$verdict" = "UNPARSED" ]; do
+        sleep 5; vi=$(( vi + 1 )); verdict="$(get_verdict "$report_p")"
+      done
+      [ "$verdict" != "UNPARSED" ] && run_log "$base : report header landed $(( vi * 5 ))s after the file appeared"
+    fi
+    if [ "$verdict" = "UNPARSED" ] && jev_on; then
+      local jv; jv="$(jev_gate verdict "$WORKSPACE" "$report_p")"
+      case "$jv" in
+        FAIL|PASS-WITH-CONCERNS)
+          verdict="$jv"
+          run_log "$base : report has no VERDICT line - Jev read it as $jv" ;;
+        *) run_log "$base : report has no VERDICT line and Jev could not settle it ($jv)" ;;
+      esac
+    fi
     run_log "VERDICT $base : $verdict"
+    if [ "$verdict" = "UNPARSED" ]; then
+      summary="$summary
+| $base | UNPARSED | report has no VERDICT line |"
+      stop_reason="$base : the validator's report has no machine-readable VERDICT line - read $report_p and decide"; break
+    fi
     summary="$summary
 | $base | $verdict | |"
 

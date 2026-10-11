@@ -90,6 +90,24 @@ independent tasks with real `In:` lines, and leave it off for a queue of follow-
 all touch the same files.** It buys nothing in the latter case anyway: every prefetch would
 be refused by the scope guard.
 
+**Jev gates: launch with `RELAY_JEV=1`** (Linux/macOS/WSL: prefix the command;
+Windows: `$env:RELAY_JEV='1'; powershell -NoProfile -File ...relay.ps1 autopilot`) when
+`~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check` prints `OK` (in WSL;
+on Windows the relay borrows that WSL install unless Jev is also installed natively). The
+run log's second line says whether the gates are on and by which route. Each gate answers in under a second and
+falls back to the old behaviour on any error, so there is no reason to leave it off when
+Jev is installed. It does four things:
+
+- answers an executor `BLOCKED` that lists `## Options` (once per task; owner-only
+  choices - irreversible, money, publishing, credentials - still stop the run);
+- classifies a validator report that has no `VERDICT:` line (FAIL, or a high-confidence
+  pass recorded as PASS-WITH-CONCERNS) instead of stopping;
+- keeps mutation reports with no survivors out of the paid end-of-run sweep;
+- skips the mutation lane for docs/images-only changes.
+
+It never stands in for the validator's grade. Every decision is logged to
+`<workspace>/.relay/jev/decisions.jsonl` - cite it when you report a Jev-answered BLOCKED.
+
 Pass the ones the user asked for and leave the rest alone. Never raise a ceiling to get
 past a stop — a run that hit `-MaxConsecutiveFails`/`--max-fails` is telling you the work
 is not converging, and giving it more attempts buys more of the same.
@@ -131,6 +149,7 @@ Then read the stop reason and act on it:
 |---|---|
 | `queue drained` | Everything ran. Report the table. |
 | `<task> : executor is BLOCKED` | The executor hit a genuine ambiguity and asked a question instead of guessing (its charter's designed escalation) rather than a failure to fix. This never reached the scout, mutator, or validator — read `.relay/results/<task>.md` for its question and surface it verbatim. Do not re-launch until it's answered; if the answer changes what the task means, fix the spec too, since the same ambiguity is still sitting in the task file. |
+| `<task> : the validator's report has no machine-readable VERDICT line` | The report was still headerless 30s after it landed (and, with `RELAY_JEV=1`, Jev could not classify it confidently). Read the report, tell the user the verdict it actually reaches, and add the `VERDICT:`/`NEXT-TASK:` lines yourself before re-launching. Before 2026-10-11 this case silently counted as a pass. |
 | `N consecutive FAIL verdicts` | The work is not converging. Hand the user the last validator report's Defects section — do not re-launch. |
 | `validator wrote no follow-up task` | The validator ended its report with `NEEDS HUMAN:`. Surface that line verbatim; it is a question only the user can answer. |
 | `executor/validator could not complete` | An agent lane broke and did not recover. Report which, and its last pane capture. |

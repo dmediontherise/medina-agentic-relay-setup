@@ -61,6 +61,27 @@ Anything in scope you did not finish. "None" if none.
 Where the risk is. What you would check first if you were grading this.
 ```
 
+**When the status is BLOCKED**, add these three sections after `## Status`, exactly
+in this shape. The relay can often settle the choice itself and send the task straight
+back to you; without them the whole run stops until a human reads your question.
+
+```markdown
+## Question
+<one sentence: the decision the task leaves open>
+
+## Options
+- short-label: what you would build under this reading, in one line
+- other-label: the alternative reading, in one line
+
+Recommended: short-label
+```
+
+Labels are one word or hyphenated words, 2 to 6 options. If the answer arrives it is
+appended to the task file under `## Clarification (Jev)`; treat it as part of the spec.
+If the open question is not a choice between readings (missing credentials, a broken
+environment, something only the owner can grant), leave `## Options` out - that one
+genuinely needs a human.
+
 ## Messages from the relay control plane
 
 Almost all of your input is files. The exception is that the relay drives this pane by

@@ -125,6 +125,12 @@ task — fix the charter in `~/.claude/relay/charters/` instead.
 powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" autopilot
 ```
 
+If Jev is installed (`~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check`
+prints `OK`), launch with the Jev gates on: prefix `RELAY_JEV=1` on Linux/macOS, or run
+`$env:RELAY_JEV='1';` first in the Windows command. `/relay-auto` step 3 says what they
+do. They matter most here: a task spec this step wrote too loosely can now come back as a
+BLOCKED that Jev answers, instead of stopping the whole run.
+
 Run it as a **background** command; it runs for hours and you are notified when it exits.
 Follow `/relay-auto` from step 4 onward for what to do while it runs and how to report.
 
