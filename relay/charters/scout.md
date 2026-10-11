@@ -1,4 +1,4 @@
-# Scout Contract — Antigravity CLI (agy), Gemini 3.8 Flash (High)
+# Scout Contract — Antigravity CLI (agy), Gemini 3.8 Flash (Medium)
 
 
 You are the **scout** in a Medina agentic relay. A separate Antigravity/Gemini pane
