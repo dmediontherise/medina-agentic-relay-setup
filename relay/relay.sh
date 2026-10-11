@@ -431,7 +431,11 @@ Medina Agentic Relay - tmux control plane
                                             Build the session and boot the agents
   relay.sh down                             Tear the session down
   relay.sh status                           Session state, pane list, bus contents
-  relay.sh health   [-a <agent>] [--deep]   Prove each agent still answers
+  relay.sh health   [-a <agent>] [--deep] [--no-act]
+                                            Prove each agent still answers. Falls a
+                                            quota-exhausted agy pane to its opencode
+                                            free model automatically; --no-act (or
+                                            RELAY_HEALTH_NO_ACT=1) keeps it read-only
   relay.sh restart  -a <agent|all> [--provider agy|opencode]
                                             Respawn a wedged or crashed pane in place.
                                             --provider (executor/scout/mutator only) forces
@@ -462,7 +466,7 @@ Medina Agentic Relay - tmux control plane
 
   agy model for the executor / scout / mutator panes, in precedence order:
     --model <id> on 'up'  >  RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}  >  RELAY_AGY_MODEL
-    default: gemini-3.8-flash-high      ('agy models' lists what you can reach)
+    default: gemini-3.8-flash-medium      ('agy models' lists what you can reach)
 
   opencode fallback (executor/scout/mutator only, when agy's quota is exhausted):
     autopilot falls a pane to it automatically (assert_agent_ready); manually with
@@ -678,7 +682,7 @@ cmd_up() {
   # what went red), so RELAY_AGY_MODEL_MUTATOR=gemini-3.8-flash-medium buys more mutants
   # inside its 25-minute budget at no cost to the verdict. The executor and the scout
   # both do reasoning the verdict depends on; leave those on the high tier.
-  local agy_model="${model_opt:-${RELAY_AGY_MODEL:-gemini-3.8-flash-high}}"
+  local agy_model="${model_opt:-${RELAY_AGY_MODEL:-gemini-3.8-flash-medium}}"
   local agy_model_exec="${RELAY_AGY_MODEL_EXECUTOR:-$agy_model}"
   local agy_model_scout="${RELAY_AGY_MODEL_SCOUT:-$agy_model}"
   local agy_model_mut="${RELAY_AGY_MODEL_MUTATOR:-$agy_model}"
@@ -748,7 +752,7 @@ cmd_up() {
   # prompt is prepended to every turn instead, so the rules on form bind as hard on turn
   # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and long;
   # this file is the law, and short.
-  l_val="$(write_launcher  validator "$(printf '%q --model sonnet --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
+  l_val="$(write_launcher  validator "$(printf '%q --model claude-sonnet-5-5 --permission-mode %s --append-system-prompt-file %q %q' "$claude_exe" "$claude_mode" "$style_file" "$val_boot")")"
   l_scout="$(write_launcher scout    "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_scout" "$exec_flags" "$scout_boot")")"
   l_mut="$(write_launcher  mutator   "$(printf '%q --add-dir %q --model %s %s -i %q' "$agy_exe" "$workspace" "$agy_model_mut" "$exec_flags" "$mut_boot")")"
   l_bus="$(write_launcher  buswatch  'while true; do clear; printf "== RELAY BUS ==\n\n"; find .relay -type f -name "*.md" -not -path "*/launch/*" -exec ls -lt {} + 2>/dev/null | head -14; sleep 3; done')"
@@ -899,12 +903,26 @@ cmd_status() {
 # The check 'status' could never do. 'status' proves panes exist; this proves the
 # agents in them still work. Exits non-zero when any agent is unhealthy so a
 # caller cannot skim past a dead lane.
+# health ACTS on one fault and only one: agy quota exhaustion, which it resolves by
+# falling that pane to its opencode free-model launcher. Everything else stays
+# report-only, because health's value as a diagnostic depends on it not thrashing
+# panes - a wedged-token or crashed pane still just prints its recover line.
+#
+# It deliberately does NOT go through assert_agent_ready. That function gates on the
+# per-run restart budget, and budget_set only ever runs inside autopilot (see
+# cmd_autopilot), so budget_left would read 0 here and the handover would silently
+# refuse. A user typing 'health' is the budget.
+#
+# Opt out with --no-act or RELAY_HEALTH_NO_ACT=1 when you want a purely read-only
+# check, e.g. from a script that only wants the exit code.
 cmd_health() {
-  local only="" deep=0
+  local only="" deep=0 act=1
+  [ -n "${RELAY_HEALTH_NO_ACT:-}" ] && act=0
   while [ $# -gt 0 ]; do
     case "$1" in
       -a|--agent) only="$2"; shift 2 ;;
       --deep) deep=1; shift ;;
+      --no-act) act=0; shift ;;
       *) fail "Unknown option for health: $1" ;;
     esac
   done
@@ -930,10 +948,31 @@ cmd_health() {
 
     f="$(pane_fault "$t")"
     if [ -n "$f" ]; then
+      local hprov=""
+      if [ "$act" -eq 1 ]; then
+        case "$f" in
+          *"quota likely exhausted"*) hprov="$(oc_fallback_eligible "$n")" ;;
+        esac
+      fi
+      if [ -n "$hprov" ]; then
+        printf '  %-10s \033[33mFAULT: %s%s - handing it over...\033[0m\n' "$n" "$f" "$age"
+        RESTART_BAD=""
+        restart_agents "$n" 0 "$hprov" >/dev/null || true
+        if [ -z "$(printf '%s' "$RESTART_BAD" | tr -d ' ')" ]; then
+          printf '  %-10s \033[32mHANDED OVER - now on the opencode free model (degraded vs agy) and responding\033[0m\n' "$n"
+          continue
+        fi
+        printf '  %-10s \033[31mHANDOVER FAILED - no answer even after falling to opencode%s\033[0m\n             inspect it: relay.sh capture -a %s\n' "$n" "$age" "$n"
+        unhealthy=$((unhealthy+1)); continue
+      fi
       printf '  %-10s \033[31mFAULT: %s%s\033[0m\n             recover with: relay.sh restart -a %s\n' "$n" "$f" "$age" "$n"
       case "$f" in
         *"quota likely exhausted"*)
-          printf '             or fall it to the free-model fallback: relay.sh restart -a %s --provider opencode\n' "$n" ;;
+          if [ "$act" -eq 0 ]; then
+            printf '             or fall it to the free-model fallback: relay.sh restart -a %s --provider opencode\n' "$n"
+          else
+            printf '             no opencode fallback available for it (see oc_fallback_eligible)\n'
+          fi ;;
       esac
       unhealthy=$((unhealthy+1)); continue
     fi
@@ -1341,6 +1380,24 @@ run_log() {
 }
 
 stop_requested() { [ -f "$WORKSPACE/.relay/STOP" ]; }
+
+# --- Jev gates (opt-in: RELAY_JEV=1) ------------------------------------------
+# Jev (TypeSafe System One, installed by Jev-AI-Skill) answers small typed questions in
+# well under a second, at a fraction of a validator turn. relay_jev.py holds the parsing
+# and the calls; every gate there prints one decision word and, on any error, the answer
+# this script would have reached without Jev - so a Jev outage changes nothing.
+#
+# What is gated, and what was measured before it was (relay/jev-calibration.md):
+#   - a report with no VERDICT: line is classified instead of passing silently
+#   - executor BLOCKED with an Options list is answered instead of stopping the run
+#   - mutation reports with nothing to act on never reach the paid sweep
+#   - docs-only changes skip the mutation lane
+# What is NOT gated: the validator's verdict itself. Jev was tried as a stand-in on 97
+# past tasks and could not tell the validator's FAILs from its passes (AUC 0.61).
+JEV_PY="${RELAY_JEV_PYTHON:-$HOME/Jev-AI-Skill/.venv/bin/python}"
+JEV_HELPER="${RELAY_JEV_HELPER:-$RELAY_HOME/relay_jev.py}"
+jev_on() { [ "${RELAY_JEV:-0}" = "1" ] && [ -x "$JEV_PY" ] && [ -f "$JEV_HELPER" ]; }
+jev_gate() { timeout 90 "$JEV_PY" -I "$JEV_HELPER" "$@" 2>/dev/null | head -1; }
 
 # Tasks with no report yet, in id order. Never dispatch the unfilled seed
 # template: it states no requirements, can never earn a report, and would be
@@ -1859,6 +1916,11 @@ cmd_autopilot() {
   deadline=$(( start_ts + budget_min * 60 ))
 
   run_log "autopilot start - budget ${budget_min}m, max ${max_cycles} cycles, mutation=$mutation_on"
+  if jev_on; then
+    run_log "Jev gates ON (verdict recovery, BLOCKED answers, sweep filter, docs-only mutation skip)"
+  elif [ "${RELAY_JEV:-0}" = "1" ]; then
+    run_log "RELAY_JEV=1 but Jev is not usable ($JEV_PY / $JEV_HELPER missing) - running without it"
+  fi
 
   while true; do
     if stop_requested;                      then stop_reason="stopped by .relay/STOP"; break; fi
@@ -1896,6 +1958,30 @@ cmd_autopilot() {
         done
       fi
       [ -z "$(printf '%s' "$outstanding" | tr -d ' ')" ] && break
+
+      # A report that says "no survivors" on a green baseline leaves the sweep nothing to
+      # decide, and the sweep is a paid validator turn with a 30m ceiling. Drop those
+      # before dispatching; if none are left, record them as reviewed exactly as a
+      # sweep's VERDICT: PASS would have, and skip the turn.
+      if jev_on; then
+        local sg kept dropped=0
+        sg="$(jev_gate sweep "$WORKSPACE" $outstanding)"
+        case "$sg" in
+          NONE|KEEP*)
+            kept=" ${sg#KEEP} "; [ "$sg" = "NONE" ] && kept=" "
+            for m in $outstanding; do
+              case "$kept" in *" $m "*) ;; *) basename "$m" .md >> "$seen_file"; dropped=$(( dropped + 1 )) ;; esac
+            done
+            outstanding="$(printf '%s' "${kept}" | sed 's/^ *//;s/ *$//')"
+            [ "$dropped" -gt 0 ] && run_log "Jev sweep filter: $dropped report(s) had no survivors on a green baseline - marked reviewed without a validator turn"
+            ;;
+        esac
+        if [ -z "$(printf '%s' "$outstanding" | tr -d ' ')" ]; then
+          summary="$summary
+| mutation sweep | skipped | nothing to act on (Jev sweep filter) |"
+          continue
+        fi
+      fi
 
       run_log "mutation sweep over $(printf '%s' "$outstanding" | wc -w | tr -d ' ') unreviewed report(s)"
       assert_agent_ready validator || { stop_reason="validator unavailable for the mutation sweep"; break; }
@@ -2044,6 +2130,24 @@ cmd_autopilot() {
     # covers the resumed and prefetched-result paths above, since all three
     # converge on the same result_p before this point.
     local exec_status; exec_status="$(get_exec_status "$result_p")"
+    # Many BLOCKED questions are a choice between readings the executor already spelled
+    # out (executor.md asks for them under ## Options). Jev picks one when it is
+    # confident AND the choice is not the owner's to make (irreversible, spends money,
+    # publishes, needs credentials). The answer is appended to the task as a
+    # Clarification - so the validator grades against it - the BLOCKED result is moved
+    # aside, and the same task goes straight back to the executor. Once per task: a
+    # second BLOCKED on it stops the run as before.
+    if [ "$exec_status" = "BLOCKED" ] && jev_on; then
+      local jb; jb="$(jev_gate blocked "$WORKSPACE" "$base")"
+      case "$jb" in
+        ANSWERED*)
+          run_log "$base : executor BLOCKED - Jev chose '$(printf '%s' "${jb#ANSWERED }" | cut -d' ' -f1)' (see the task's Clarification) - re-running the executor"
+          summary="$summary
+| $base | BLOCKED -> Jev answered | $(printf '%s' "${jb#ANSWERED }" | cut -d' ' -f1) |"
+          continue ;;
+        *) run_log "$base : Jev left the BLOCKED question to a human (${jb#ASK })" ;;
+      esac
+    fi
     if [ "$exec_status" = "BLOCKED" ]; then
       run_log "$base : executor reported BLOCKED - stopping instead of running it through scout/mutation/validation"
       summary="$summary
@@ -2052,7 +2156,16 @@ cmd_autopilot() {
     fi
 
     # The mutation lane starts here and is never waited on.
-    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ]; then
+    # Docs and images only: no test can pin a sentence, so a mutation pass would cost a
+    # pane, a snapshot and a slot in the end-of-run drain for a report with nothing in
+    # it. Markup and config are NOT skipped - html-only tasks produced real survivors.
+    local mskip=""
+    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ] && jev_on; then
+      local mg; mg="$(jev_gate mutation "$WORKSPACE" "$base")"
+      case "$mg" in SKIP*) mskip="${mg#SKIP }" ;; esac
+      [ -n "$mskip" ] && run_log "skipping mutation for $base - $mskip"
+    fi
+    if [ "$mutation_on" -eq 1 ] && [ ! -f "$mutation_p" ] && [ -z "$mskip" ]; then
       if assert_agent_ready mutator; then
         local meth; meth="$(new_mutant_snapshot "$base" 2>/dev/null || printf 'failed')"
         if [ "$meth" = "failed" ]; then
@@ -2150,7 +2263,33 @@ cmd_autopilot() {
     fi
 
     local verdict; verdict="$(get_verdict "$report_p")"
+    # UNPARSED used to fall through the FAIL test below and count as a pass: 8 of 71
+    # graded cycles in the logs up to 2026-10-11, among them one whose
+    # report now opens with a perfectly good VERDICT line - it was read while still
+    # being written (wait_artifact returns 0.9s after the file appears). So: re-read
+    # for 30s, then let Jev classify the body, then stop for a human. Never pass it.
+    if [ "$verdict" = "UNPARSED" ]; then
+      local vi=0
+      while [ "$vi" -lt 6 ] && [ "$verdict" = "UNPARSED" ]; do
+        sleep 5; vi=$(( vi + 1 )); verdict="$(get_verdict "$report_p")"
+      done
+      [ "$verdict" != "UNPARSED" ] && run_log "$base : report header landed $(( vi * 5 ))s after the file appeared"
+    fi
+    if [ "$verdict" = "UNPARSED" ] && jev_on; then
+      local jv; jv="$(jev_gate verdict "$WORKSPACE" "$report_p")"
+      case "$jv" in
+        FAIL|PASS-WITH-CONCERNS)
+          verdict="$jv"
+          run_log "$base : report has no VERDICT line - Jev read it as $jv" ;;
+        *) run_log "$base : report has no VERDICT line and Jev could not settle it ($jv)" ;;
+      esac
+    fi
     run_log "VERDICT $base : $verdict"
+    if [ "$verdict" = "UNPARSED" ]; then
+      summary="$summary
+| $base | UNPARSED | report has no VERDICT line |"
+      stop_reason="$base : the validator's report has no machine-readable VERDICT line - read $report_p and decide"; break
+    fi
     summary="$summary
 | $base | $verdict | |"
 

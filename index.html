@@ -958,6 +958,13 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       </div>
     </div>
     <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(48,209,88,.12);">⚡</div>
+      <div>
+        <strong>Jev-AI-Skill + TypeSafe key <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
+        <span>Sub-second typed decisions for autopilot's small calls — answering an executor's <code>BLOCKED</code>, reading a headerless verdict, skipping empty mutation sweeps. Install: <code>git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill &amp;&amp; ~/Jev-AI-Skill/install.sh</code>, key in <code>~/.config/jev-loop/typesafe_api_key</code>. Windows can reuse a WSL install. Turn on per run with <code>RELAY_JEV=1</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
       <div class="prereq-item-icon" style="background:rgba(90,200,250,.12);">🔑</div>
       <div>
         <strong>Google Account</strong>
@@ -1187,6 +1194,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay_jev.py "$env:USERPROFILE\.claude\relay\" -Force</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\charters "$env:USERPROFILE\.claude\relay\" -Recurse -Force</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
@@ -1391,7 +1399,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
-              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/relay.sh ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp commands/*.md ~/.claude/commands/</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
@@ -1495,7 +1503,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
-              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/relay.sh ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp commands/*.md ~/.claude/commands/</span></span>
             </div>
@@ -1879,6 +1887,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <h4>The relay control plane</h4>
       <p>This repo. <span class="mono">relay.ps1</span> (Windows/psmux) and <span class="mono">relay.sh</span> (macOS·Linux/tmux), the three agent charters, and the Claude Code slash commands.</p>
       <div class="resource-repo">github.com/dmediontherise/medina-agentic-relay-setup</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/King4s/Jev-AI-Skill" target="_blank">
+      <h4>Jev-AI-Skill <span style="color:var(--text2);font-weight:400;">(optional)</span></h4>
+      <p>Jev, TypeSafe System One's fast decision model, behind autopilot's opt-in <span class="mono">RELAY_JEV=1</span> gates. It settles small calls; it never grades a task.</p>
+      <div class="resource-repo">github.com/King4s/Jev-AI-Skill</div>
     </a>
     <a class="glass-card resource-card" href="https://antigravity.google" target="_blank">
       <h4>Antigravity CLI (agy)</h4>

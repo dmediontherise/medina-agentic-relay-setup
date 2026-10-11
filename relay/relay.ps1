@@ -1878,6 +1878,119 @@ function Get-Verdict($reportPath) {
     return 'UNPARSED'
 }
 
+# The executor's own escalation path: COMPLETE | PARTIAL | BLOCKED, one word on the first
+# non-blank line after the "## Status" heading (see executor.md). A BLOCKED result carries
+# a specific question for a human, not a bug to scout, mutate or grade - see the call site
+# in autopilot for why that matters. Ported from relay.sh's get_exec_status on 2026-10-11:
+# until then this port ran BLOCKED results through the whole cycle anyway.
+function Get-ExecStatus($resultPath) {
+    if (-not (Test-Path $resultPath)) { return 'MISSING' }
+    $found = $false
+    foreach ($ln in @(Get-Content $resultPath -EA SilentlyContinue)) {
+        if ($found -and $ln.Trim()) { return ($ln -replace '\s', '') }
+        if ($ln -match '^## Status') { $found = $true }
+    }
+    return ''
+}
+
+# --- Jev gates (opt-in: $env:RELAY_JEV = '1') -----------------------------------------
+# Same four gates as relay.sh, through the same relay_jev.py - see the comment block on
+# jev_on there and relay/jev-calibration.md for what each gate does and what was measured
+# before it was wired in. Jev never grades a task.
+#
+# Two ways to run the helper, resolved once per run:
+#   native - a Windows python that can import jev_mcp: RELAY_JEV_PYTHON, or `python` on
+#            PATH when $env:JEV_HOME (default ~\Jev-AI-Skill) holds jev_mcp.py. Helper is
+#            RELAY_JEV_HELPER, default relay_jev.py next to this script. Needs the TypeSafe
+#            key on the Windows side (~\.config\jev-loop\typesafe_api_key).
+#   wsl    - the Jev install inside WSL, via wsl.exe: ~/Jev-AI-Skill/.venv/bin/python and
+#            ~/.claude/relay/relay_jev.py there (RELAY_JEV_WSL_PYTHON / RELAY_JEV_WSL_HELPER
+#            override). One install, one key. Off with RELAY_JEV_NO_WSL=1.
+# A gate that cannot run returns '', which every call site treats as "no Jev".
+$script:JevRunner = $null
+$script:JevRunnerResolved = $false
+
+function ConvertTo-WslPath($p) {
+    if ("$p" -match '^([A-Za-z]):[\\/](.*)$') {
+        return '/mnt/' + $Matches[1].ToLower() + '/' + ($Matches[2] -replace '\\', '/')
+    }
+    return "$p"
+}
+
+function ConvertTo-NativeArg($a) {
+    # .NET Framework has no ArgumentList, so quote by the Windows command-line rules - but
+    # only when needed: wsl.exe parses its own raw command line and does not recognise a
+    # quoted "-e" as its option (bash then tries to run '-e' as a command).
+    if ("$a" -ne '' -and "$a" -notmatch '[\s"]') { return "$a" }
+    $q = "$a" -replace '(\\*)"', '$1$1\"'
+    $q = $q -replace '(\\+)$', '$1$1'
+    return '"' + $q + '"'
+}
+
+function Get-JevRunner {
+    if ($script:JevRunnerResolved) { return $script:JevRunner }
+    $script:JevRunnerResolved = $true
+    if ($env:RELAY_JEV -ne '1') { return $null }
+
+    $helper = if ($env:RELAY_JEV_HELPER) { $env:RELAY_JEV_HELPER } else { Join-Path $RelayHome 'relay_jev.py' }
+    $jevHome = if ($env:JEV_HOME) { $env:JEV_HOME } else { Join-Path $env:USERPROFILE 'Jev-AI-Skill' }
+    $py = $env:RELAY_JEV_PYTHON
+    if (-not $py -and (Test-Path (Join-Path $jevHome 'jev_mcp.py'))) {
+        $c = Get-Command python -EA 0
+        if ($c) { $py = $c.Source }
+    }
+    if ($py -and (Test-Path $py) -and (Test-Path $helper)) {
+        $script:JevRunner = @{ mode = 'native'; exe = $py; pre = @('-I', '-X', 'utf8', $helper); wsl = $false }
+        return $script:JevRunner
+    }
+
+    $wsl = Get-Command wsl.exe -EA 0
+    if ($wsl -and -not $env:RELAY_JEV_NO_WSL) {
+        $wpy = $env:RELAY_JEV_WSL_PYTHON
+        $wh  = $env:RELAY_JEV_WSL_HELPER
+        if (-not $wpy -or -not $wh) {
+            $wslHome = "$(& $wsl.Source -e sh -c 'printf %s "$HOME"' 2>$null)".Trim()
+            if ($wslHome) {
+                if (-not $wpy) { $wpy = "$wslHome/Jev-AI-Skill/.venv/bin/python" }
+                if (-not $wh)  { $wh  = "$wslHome/.claude/relay/relay_jev.py" }
+            }
+        }
+        if ($wpy -and $wh) {
+            & $wsl.Source -e test -x $wpy -a -f $wh 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                $script:JevRunner = @{ mode = 'wsl'; exe = $wsl.Source; pre = @('-e', $wpy, '-I', '-X', 'utf8', $wh); wsl = $true }
+            }
+        }
+    }
+    return $script:JevRunner
+}
+
+# First line of the helper's answer, or '' if Jev is off or the helper could not run.
+function Invoke-JevGate([string]$sub, [string[]]$gateArgs) {
+    $run = Get-JevRunner
+    if (-not $run) { return '' }
+    $all = @($run.pre) + @($sub)
+    foreach ($a in $gateArgs) { $all += $(if ($run.wsl) { ConvertTo-WslPath $a } else { $a }) }
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $run.exe
+        $psi.Arguments = ($all | ForEach-Object { ConvertTo-NativeArg $_ }) -join ' '
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $outTask = $p.StandardOutput.ReadToEndAsync()
+        $null = $p.StandardError.ReadToEndAsync()
+        if (-not $p.WaitForExit(90000)) { try { $p.Kill() } catch { }; return '' }
+        $first = @(($outTask.Result -replace "`r", '') -split "`n" | Where-Object { $_.Trim() })
+        if ($first.Count -eq 0) { return '' }
+        return $first[0].Trim()
+    }
+    catch { return '' }
+}
+
 # agy panes wedge after long uptime plus a long idle gap. The relay's own history says
 # so, and autopilot makes the idle gaps longer - the mutator and scout can both sit for
 # a whole executor phase. Two defences, both cheap because agy costs nothing:
@@ -2244,6 +2357,13 @@ if ($Command -eq 'autopilot') {
     $sweepDone   = $false
 
     Write-RunLog $log "autopilot start - budget ${BudgetMin}m, max ${MaxCycles} cycles, mutation=$mutationOn"
+    $jevRun = Get-JevRunner
+    if ($jevRun) {
+        Write-RunLog $log "Jev gates ON via $($jevRun.mode) python (verdict recovery, BLOCKED answers, sweep filter, docs-only mutation skip)"
+    }
+    elseif ($env:RELAY_JEV -eq '1') {
+        Write-RunLog $log "RELAY_JEV=1 but no usable Jev runner (native python + relay_jev.py, or the WSL install) - running without it"
+    }
 
     while ($true) {
         if (Test-StopRequested $s)      { $stopReason = 'stopped by .relay/STOP'; break }
@@ -2280,6 +2400,35 @@ if ($Command -eq 'autopilot') {
                 }
             }
             if ($outstanding.Count -eq 0) { break }
+
+            # A report that says "no survivors" on a green baseline leaves the sweep
+            # nothing to decide, and the sweep is a paid validator turn with a 30m
+            # ceiling. Drop those first; if none are left, record them as reviewed exactly
+            # as a sweep's VERDICT: PASS would have, and skip the turn. The helper answers
+            # with paths in its own form (WSL or Windows), so match on the file name.
+            $sg = Invoke-JevGate 'sweep' (@($ws) + @($outstanding | ForEach-Object { $_.FullName }))
+            if ($sg -eq 'NONE' -or $sg -like 'KEEP*') {
+                $keepNames = @()
+                if ($sg -like 'KEEP*') {
+                    foreach ($k in @($sg.Substring(4).Trim() -split '\s+')) {
+                        if ($k) { $keepNames += ($k -split '[\\/]')[-1] }
+                    }
+                }
+                $kept = @(); $dropped = 0
+                foreach ($m in $outstanding) {
+                    if ($keepNames -contains $m.Name) { $kept += $m }
+                    else { $seen[$m.BaseName] = $true; $dropped++ }
+                }
+                if ($dropped -gt 0) {
+                    Save-Seen $seenFile $seen
+                    Write-RunLog $log "Jev sweep filter: $dropped report(s) had no survivors on a green baseline - marked reviewed without a validator turn"
+                }
+                $outstanding = $kept
+                if ($outstanding.Count -eq 0) {
+                    $summary += "| mutation sweep | skipped | nothing to act on (Jev sweep filter) |"
+                    continue
+                }
+            }
 
             Write-RunLog $log "mutation sweep over $($outstanding.Count) unreviewed report(s)"
             if (-not (Assert-AgentReady $s 'validator' $log)) { $stopReason = 'validator unavailable for the mutation sweep'; break }
@@ -2417,9 +2566,45 @@ if ($Command -eq 'autopilot') {
             }
         }
 
-        # 2. mutation lane starts here and is never waited on
+        # BLOCKED is the executor's designed escalation for a task it found genuinely
+        # ambiguous (executor.md: "write status BLOCKED with the specific question rather
+        # than guessing"). Nothing downstream can answer that question - the scout only
+        # observes, the mutator only mutates, the validator only grades - so running it
+        # through them anyway spends a full cycle to arrive at the FAIL this line reaches
+        # immediately, without ever surfacing the question. Covers the resumed and
+        # prefetched-result paths too, since all three converge on $resultPath here.
+        #
+        # With Jev on, a BLOCKED that lists ## Options gets one chance first: Jev picks an
+        # option when it is confident and the choice is not the owner's to make, the
+        # answer is appended to the task as a Clarification, the result is moved aside,
+        # and the same task goes straight back to the executor. Once per task.
+        $execStatus = Get-ExecStatus $resultPath
+        if ($execStatus -eq 'BLOCKED') {
+            $jb = Invoke-JevGate 'blocked' @($ws, $base)
+            if ($jb -like 'ANSWERED*') {
+                $choice = @($jb.Substring(8).Trim() -split '\s+')[0]
+                Write-RunLog $log "$base : executor BLOCKED - Jev chose '$choice' (see the task's Clarification) - re-running the executor"
+                $summary += "| $base | BLOCKED -> Jev answered | $choice |"
+                continue
+            }
+            if ($jb) { Write-RunLog $log "$base : Jev left the BLOCKED question to a human ($($jb -replace '^ASK\s*', ''))" }
+            Write-RunLog $log "$base : executor reported BLOCKED - stopping instead of running it through scout/mutation/validation"
+            $summary += "| $base | BLOCKED | executor's question is in $resultPath |"
+            $stopReason = "$base : executor is BLOCKED and needs a human answer - see $resultPath"
+            break
+        }
+
+        # 2. mutation lane starts here and is never waited on. Docs/images-only changes
+        #    skip it with Jev on: no test can pin a sentence. Markup and config are NOT
+        #    skipped - html-only tasks produced real survivors.
         if ($mutationOn -and -not (Test-Path $mutationPath)) {
-            Start-MutationPass $s $taskFile.FullName $log | Out-Null
+            $mg = Invoke-JevGate 'mutation' @($ws, $base)
+            if ($mg -like 'SKIP*') {
+                Write-RunLog $log "skipping mutation for $base - $($mg.Substring(4).Trim())"
+            }
+            else {
+                Start-MutationPass $s $taskFile.FullName $log | Out-Null
+            }
         }
 
         # 3. scout evidence - the step that must not be skipped silently
@@ -2517,7 +2702,32 @@ if ($Command -eq 'autopilot') {
         }
 
         $verdict = Get-Verdict $reportPath
+        # UNPARSED used to fall through the FAIL test below and count as a pass: 8 of 71
+        # graded cycles in the logs up to 2026-10-11, at least one of them a report read
+        # while still being written (Wait-Artifact returns as soon as the file exists). So:
+        # re-read for 30s, then let Jev classify the body, then stop for a human.
+        if ($verdict -eq 'UNPARSED') {
+            $vi = 0
+            while ($vi -lt 6 -and $verdict -eq 'UNPARSED') {
+                Start-Sleep -Seconds 5; $vi++
+                $verdict = Get-Verdict $reportPath
+            }
+            if ($verdict -ne 'UNPARSED') { Write-RunLog $log "$base : report header landed $($vi * 5)s after the file appeared" }
+        }
+        if ($verdict -eq 'UNPARSED') {
+            $jv = Invoke-JevGate 'verdict' @($ws, $reportPath)
+            if ($jv -eq 'FAIL' -or $jv -eq 'PASS-WITH-CONCERNS') {
+                $verdict = $jv
+                Write-RunLog $log "$base : report has no VERDICT line - Jev read it as $jv"
+            }
+            elseif ($jv) { Write-RunLog $log "$base : report has no VERDICT line and Jev could not settle it ($jv)" }
+        }
         Write-RunLog $log "VERDICT $base : $verdict"
+        if ($verdict -eq 'UNPARSED') {
+            $summary += "| $base | UNPARSED | report has no VERDICT line |"
+            $stopReason = "$base : the validator's report has no machine-readable VERDICT line - read $reportPath and decide"
+            break
+        }
         $summary += "| $base | $verdict | |"
 
         if ($verdict -eq 'FAIL') {

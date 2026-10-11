@@ -7,7 +7,9 @@ durable artifact.
 
 `autopilot` runs the whole queue unattended — execute → scout → validate per task, with
 the mutation lane in parallel — restarting broken panes on its own and stopping when the
-work stops converging. Only the validator spends Claude quota.
+work stops converging. Only the validator spends Claude quota. Optionally, **Jev** (a
+sub-second typed-decision model) settles the small calls that used to stop a run or spend a
+validator turn — see [Jev gates](#jev-gates-opt-in-bash-and-powershell).
 
 The setup guide site lives in [`index.html`](index.html). The runnable control plane
 lives in [`relay/`](relay/).
@@ -188,6 +190,7 @@ and is forbidden by its charter from writing to the others.
 │                          the expectations it derived from the spec before any code
 ├── mutants/<task>/        Mutator's isolated worktree snapshot per task
 ├── logs/                  autopilot run logs
+├── jev/decisions.jsonl    every Jev gate decision, when RELAY_JEV=1
 ├── launch/                generated pane launcher scripts
 ├── STOP                   touch this to halt an autopilot run cleanly
 └── executor|scout|mutator|validator.md   charters, copied in at `up`
@@ -223,6 +226,8 @@ It belongs to the free pane now.
 | Reviewers | Claude Code — `npm i -g @anthropic-ai/claude-code` | same |
 | Shell | Windows PowerShell 5.1 | bash 4+ |
 | Fallback *(optional)* | [`opencode`](https://opencode.ai) — `npm install -g opencode-ai` | `curl -fsSL https://opencode.ai/install \| bash` |
+| Jev gates *(optional)* | Python 3.11+ and [Jev-AI-Skill](https://github.com/King4s/Jev-AI-Skill) — `.\install.ps1`, **or** reuse a WSL install (no Windows install needed) | Python 3.11+ and Jev-AI-Skill — `install.sh` |
+| TypeSafe API key *(Jev only)* | [console.typesafe.ai/keys](https://console.typesafe.ai/keys) | same |
 
 Sign in once before wiring anything up — `agy` (Google browser sign-in) and `claude`.
 An agent pane sitting on an auth screen looks identical to a busy one. `opencode`'s free
@@ -250,6 +255,7 @@ git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
 cd medina-agentic-relay-setup
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null
 Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force
+Copy-Item relay\relay_jev.py "$env:USERPROFILE\.claude\relay\" -Force   # Jev gates; harmless without Jev
 Copy-Item relay\charters  "$env:USERPROFILE\.claude\relay\" -Recurse -Force
 Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 ```
@@ -268,11 +274,29 @@ Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
 cd medina-agentic-relay-setup
 mkdir -p ~/.claude/relay ~/.claude/commands
-cp relay/relay.sh ~/.claude/relay/
+cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/   # relay_jev.py: Jev gates; harmless without Jev
 cp -r relay/charters ~/.claude/relay/
 cp commands/*.md ~/.claude/commands/
 chmod +x ~/.claude/relay/relay.sh
 ```
+
+**Optional: Jev gates.** Skip this and the relay behaves exactly as before. To use them,
+install Jev-AI-Skill and store a TypeSafe key where it looks for one:
+
+```bash
+# macOS / Linux / WSL
+git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill && ~/Jev-AI-Skill/install.sh
+mkdir -p ~/.config/jev-loop && chmod 700 ~/.config/jev-loop
+read -rsp "TypeSafe key: " k && printf '%s' "$k" > ~/.config/jev-loop/typesafe_api_key && unset k
+chmod 600 ~/.config/jev-loop/typesafe_api_key
+~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check    # expect: ... OK (model jev-...)
+```
+
+On Windows you can skip all of that if WSL already has it — `relay.ps1` borrows the WSL
+install through `wsl.exe`, so there is one install and one key. To run natively instead,
+clone Jev-AI-Skill to `~\Jev-AI-Skill`, run `.\install.ps1`, and put the key in
+`~\.config\jev-loop\typesafe_api_key`. Then turn the gates on per run with `RELAY_JEV=1` —
+see [Jev gates](#jev-gates-opt-in-bash-and-powershell).
 
 ---
 
@@ -320,7 +344,9 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 opencode fallback model instead — see [Fallback](#fallback-opencodes-free-models-when-agys-quota-runs-out).
 
 Then drive a full cycle from your Claude session with `/relay-task <what you want built>`.
-For a queue of tasks, `/relay-auto` runs all of them unattended. Or by hand:
+For a queue of tasks, `/relay-auto` runs all of them unattended — launch it as
+`RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot` (Windows: `$env:RELAY_JEV='1'` first) if
+you installed Jev. Or by hand:
 
 ```bash
 R=~/.claude/relay/relay.sh                 # Windows: see the PowerShell form above
@@ -512,7 +538,60 @@ limits. Resets in 2h19m3s.
 
 ---
 
+## Jev gates (opt-in, bash and PowerShell)
+
+[Jev-AI-Skill](https://github.com/King4s/Jev-AI-Skill) gives the relay access to Jev,
+TypeSafe System One's fast decision model, which answers a typed question in well under a
+second. `RELAY_JEV=1 relay.sh autopilot` (Windows: `$env:RELAY_JEV='1'` before
+`relay.ps1 autopilot`) puts it in front of four small decisions that
+used to either stop the run or spend a validator turn:
+
+| Gate | Without Jev | With Jev |
+|---|---|---|
+| Executor `BLOCKED` with `## Options` | run stops | Jev picks an option (once per task, never an owner-only choice), appends it to the task as `## Clarification (Jev)`, re-runs the executor |
+| Report with no `VERDICT:` line | re-read 30s, then stop (it used to count as a pass) | Jev classifies the body: FAIL, or a ≥0.9-confidence pass recorded as PASS-WITH-CONCERNS |
+| Mutation reports with no survivors | go to the paid end-of-run sweep | dropped; the sweep is skipped if nothing is left |
+| Docs/images-only change | mutation lane runs | mutation skipped |
+
+Jev does **not** grade tasks. That was measured first and rejected: it could not tell the
+validator's FAILs from its passes (AUC 0.61 over 97 past tasks). The numbers behind every
+threshold are in [`relay/jev-calibration.md`](relay/jev-calibration.md).
+
+Setup: install Jev-AI-Skill (`~/Jev-AI-Skill/install.sh`) and put a TypeSafe key in
+`~/.config/jev-loop/typesafe_api_key`. `relay_jev.py` must sit next to `relay.sh` in
+`~/.claude/relay/`. Override paths with `RELAY_JEV_PYTHON` / `RELAY_JEV_HELPER`, and the
+thresholds with `RELAY_JEV_VERDICT_CONF` (0.9) / `RELAY_JEV_DECIDE_CONF` (0.7). Any Jev
+error falls back to the no-Jev behaviour. Every decision is appended to
+`<workspace>/.relay/jev/decisions.jsonl`.
+
+**Windows:** `relay.ps1` runs the same `relay_jev.py`, by one of two routes chosen once per run
+and named in the run log. *native*: a Windows `python` that can import `jev_mcp`, either
+`RELAY_JEV_PYTHON` or `python` on PATH with Jev-AI-Skill at `$env:JEV_HOME`
+(default `~\Jev-AI-Skill`). This route needs the key on the Windows side. *wsl*: otherwise,
+the WSL install through `wsl.exe`, which keeps one install and one key
+(`RELAY_JEV_WSL_PYTHON` / `RELAY_JEV_WSL_HELPER` override, `RELAY_JEV_NO_WSL=1` disables it).
+Workspaces must be on a drive path (`C:\...`) for the WSL route.
+
+The 2026-10-11 port also brought `relay.ps1` two things it lacked even without Jev: the
+executor-`BLOCKED` stop (BLOCKED results used to run through scout, mutation and
+validation anyway) and the UNPARSED re-read-then-stop.
+
+---
+
 ## Troubleshooting
+
+**`RELAY_JEV=1` but nothing seems different.** Read the run log's second line. It says
+`Jev gates ON via ...` or why not (helper missing, no usable Python, WSL install not
+found). Most gates only fire on their case — a BLOCKED, a headerless report, an empty
+mutation report, a docs-only change — so a clean run looks exactly like a run without Jev;
+`.relay/jev/decisions.jsonl` shows what was asked. A gate that errors falls back to the
+no-Jev behaviour and records the error there. Check the key with
+`~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check`.
+
+**The run stopped on "no machine-readable VERDICT line".** Since 2026-10-11 a report whose
+first lines carry no `VERDICT:` is re-read for 30s and then stops the run, with or without
+Jev — before that it silently counted as a pass. Read the report, add the
+`VERDICT:`/`NEXT-TASK:` lines, and re-launch; autopilot resumes from the bus.
 
 **A pane is stuck, not busy.** This is the single most common failure. A pane sitting on a
 folder-trust gate, an auth screen, or an approval dialog looks exactly like one that is
@@ -580,6 +659,26 @@ read*, not just that the word appeared.
 ## What has actually been verified
 
 Being straight about this, since the failure modes above were all found the hard way.
+
+**On the 2026-10-11 Jev gates, both ports,** split by what was actually exercised.
+
+*Verified.* Every threshold was chosen against real history before anything was wired in:
+115 validator reports, 70 mutation reports and 35 autopilot logs from five working
+projects (numbers in [`relay/jev-calibration.md`](relay/jev-calibration.md)). Then the
+real `autopilot` loop — `relay.sh` under bash and `relay.ps1` under genuine Windows
+PowerShell 5.1 — was run with stubbed agent panes through every gate path: a BLOCKED task
+answered and re-executed, a docs-only task skipping mutation, a headerless FAIL report
+classified and its follow-up run, a mixed sweep filtered down to the one report with a
+survivor, an all-empty sweep skipped, a report header landing 8s late caught by the
+re-read, and a header that never lands stopping the run. Jev answered live (`jev-1.13.0`)
+in every one. `relay.ps1` was run through both helper routes, `native` and `wsl`.
+
+*Not verified.* No run with real agy/Claude panes has gone through a gate yet, and no real
+executor has written a BLOCKED result with `## Options` (none had written BLOCKED at all in
+the history measured). The first live run is the real test.
+
+*Rejected after measurement.* Jev as a stand-in for the validator: it could not separate
+the validator's FAILs from its passes (AUC 0.61 over 97 tasks, best of five framings).
 
 **On the 2026-09-07 opencode fallback — `relay.sh` (bash/tmux),** split by what was
 actually exercised.
@@ -837,6 +936,9 @@ verification commands that survive reformatting is the cheaper fix.
 relay/
 ├── relay.ps1              Windows / psmux control plane
 ├── relay.sh               macOS / Linux / tmux control plane
+├── relay_jev.py           Jev gates helper, called by both (opt-in: RELAY_JEV=1)
+├── jev-calibration.md     what each gate was measured against before it shipped
+├── jev-calibration/       the measurement script, to re-run when Jev's model changes
 └── charters/              agent operating contracts
     ├── executor.md
     ├── scout.md
@@ -846,6 +948,7 @@ commands/                  Claude Code slash commands
 ├── relay-new.md           scaffold a project + bring the relay up
 ├── relay-up.md            bring the relay up on an existing project
 ├── relay-task.md          run a full cycle, driven step by step
+├── implement.md           turn a plan into task files and hand them to autopilot
 ├── relay-auto.md          run the whole queue unattended (autopilot)
 ├── relay-status.md        health and bus contents
 └── relay-down.md          tear it down
