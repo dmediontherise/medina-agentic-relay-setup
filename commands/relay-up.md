@@ -21,7 +21,7 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
    ```
    Add `--safe`/`-Safe` if the user asked for gated approvals instead of unattended agents.
    Add `--model <id>`/`-Model <id>` to run the three `agy` panes on something other than
-   the default `gemini-3.8-flash-high` — `agy models` lists what the account can reach. A
+   the default `gemini-3.8-flash-medium` — `agy models` lists what the account can reach. A
    single pane can be moved on its own with `RELAY_AGY_MODEL_EXECUTOR`, `_SCOUT` or
    `_MUTATOR` in the environment instead.
 

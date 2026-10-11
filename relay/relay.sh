@@ -681,7 +681,10 @@ cmd_up() {
   # the critical path and its loop is mechanical (edit a line, re-run the suite, record
   # what went red), so RELAY_AGY_MODEL_MUTATOR=gemini-3.8-flash-medium buys more mutants
   # inside its 25-minute budget at no cost to the verdict. The executor and the scout
-  # both do reasoning the verdict depends on; leave those on the high tier.
+  # both do reasoning the verdict depends on, which is why they used to default to the
+  # high tier. The shared default moved to gemini-3.8-flash-medium some time after
+  # 2026-09-11; to keep the reasoning seats on high, set RELAY_AGY_MODEL_EXECUTOR and
+  # RELAY_AGY_MODEL_SCOUT to gemini-3.8-flash-high.
   local agy_model="${model_opt:-${RELAY_AGY_MODEL:-gemini-3.8-flash-medium}}"
   local agy_model_exec="${RELAY_AGY_MODEL_EXECUTOR:-$agy_model}"
   local agy_model_scout="${RELAY_AGY_MODEL_SCOUT:-$agy_model}"

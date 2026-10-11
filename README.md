@@ -41,10 +41,10 @@ loop with an independent verification chain.
 | Role | Model | Job |
 |---|---|---|
 | **Orchestrator** | Claude Opus (your interactive session) | Writes the task spec, dispatches, decides. Under `autopilot`, only the first of those |
-| **Executor** | `agy` on `gemini-3.8-flash-high` | Implements the task. Never grades its own work |
-| **Scout** | `agy` on `gemini-3.8-flash-high` | Writes its probes from the spec before the code exists, then re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
-| **Mutator** | `agy` on `gemini-3.8-flash-high` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
-| **Validator** | Claude Sonnet | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
+| **Executor** | `agy` on `gemini-3.8-flash-medium` | Implements the task. Never grades its own work |
+| **Scout** | `agy` on `gemini-3.8-flash-medium` | Writes its probes from the spec before the code exists, then re-runs verification, probes edge cases, audits tests. Records **observations only** — never a verdict |
+| **Mutator** | `agy` on `gemini-3.8-flash-medium` | Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path |
+| **Validator** | Claude Sonnet 5.5 | Grades spec vs. evidence. On a FAIL, writes the follow-up task itself |
 
 ### Why the scout exists
 
@@ -64,8 +64,10 @@ The model is a variable, not a literal. `--model` / `-Model` on `up` moves all t
 `RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time — useful for the
 mutator, which is never on the critical path and whose loop is mechanical, so a medium
 tier buys more mutants inside its time budget at no cost to the verdict. `agy models`
-lists what your account can reach. The default moved 3.6 → 3.7 on 2026-08-29 and
-3.7 → 3.8 on 2026-09-06.
+lists what your account can reach. The default moved 3.6 → 3.7 on 2026-08-29,
+3.7 → 3.8 on 2026-09-06, and from the 3.8 high tier to medium some time after
+2026-09-11. To keep the executor and scout on high, set `RELAY_AGY_MODEL_EXECUTOR` and
+`RELAY_AGY_MODEL_SCOUT` to `gemini-3.8-flash-high`.
 
 agy has a quota, and free accounts hit it. If [`opencode`](https://opencode.ai) is
 installed, the relay builds a free-model fallback for each of the three agy panes and
@@ -338,7 +340,7 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 ```
 
 `--model <id>` / `-Model <id>` moves the three `agy` panes off the default
-`gemini-3.8-flash-high` for that run; `RELAY_AGY_MODEL` sets a persistent default, and
+`gemini-3.8-flash-medium` for that run; `RELAY_AGY_MODEL` sets a persistent default, and
 `RELAY_AGY_MODEL_{EXECUTOR,SCOUT,MUTATOR}` moves one seat at a time. The equivalent
 `RELAY_OPENCODE_MODEL` / `RELAY_OPENCODE_MODEL_{EXECUTOR,SCOUT,MUTATOR}` move the
 opencode fallback model instead — see [Fallback](#fallback-opencodes-free-models-when-agys-quota-runs-out).
@@ -524,7 +526,7 @@ on different providers at once, and `status` shows the split. Opt out of the aut
 side entirely (keep the manual command available) with `RELAY_NO_OPENCODE_FALLBACK=1`.
 
 **This is a degradation, not a substitute.** A free model standing in for
-`gemini-3.8-flash-high` changes what the relay is actually verifying with, which is
+the agy model changes what the relay is actually verifying with, which is
 exactly why every path here says so loudly instead of swallowing it as a normal restart.
 Treat a pane running on the fallback as a sign to either wait out agy's quota reset or
 watch that lane's output more carefully than usual, not as a permanent configuration.

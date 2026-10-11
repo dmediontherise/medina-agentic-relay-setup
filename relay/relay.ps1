@@ -53,6 +53,10 @@ param(
     # you suspect that pane specifically, wasteful as a routine check.
     [switch]$Deep,
 
+    # 'health' falls a quota-exhausted agy pane to its opencode free model on its own.
+    # -NoAct (or RELAY_HEALTH_NO_ACT=1) keeps it a read-only check that only reports.
+    [switch]$NoAct,
+
     # 'restart -Agent <role> -Provider opencode' forces that pane onto its opencode
     # free-model fallback instead of agy; '-Provider agy' switches it back. Only valid
     # with a single executor/scout/mutator agent, never 'all' - see Restart-Agents.
@@ -845,10 +849,15 @@ if ($Command -eq 'up') {
     # re-run the suite, record what went red), so RELAY_AGY_MODEL_MUTATOR set to
     # gemini-3.8-flash-medium buys more mutants inside its 25-minute budget at no cost
     # to the verdict. The executor and the scout both do reasoning the verdict depends
-    # on - leave those on the high tier.
+    # on, which is why they used to default to the high tier.
+    #
+    # The shared default moved to gemini-3.8-flash-medium in the installed relay.sh some
+    # time after 2026-09-11, and this port followed on 2026-10-11. To keep the reasoning
+    # seats on the high tier, set RELAY_AGY_MODEL_EXECUTOR and RELAY_AGY_MODEL_SCOUT to
+    # gemini-3.8-flash-high.
     $agyModel = $Model
     if (-not $agyModel) { $agyModel = $env:RELAY_AGY_MODEL }
-    if (-not $agyModel) { $agyModel = 'gemini-3.8-flash-high' }
+    if (-not $agyModel) { $agyModel = 'gemini-3.8-flash-medium' }
     $agyModelExec  = if ($env:RELAY_AGY_MODEL_EXECUTOR) { $env:RELAY_AGY_MODEL_EXECUTOR } else { $agyModel }
     $agyModelScout = if ($env:RELAY_AGY_MODEL_SCOUT)    { $env:RELAY_AGY_MODEL_SCOUT }    else { $agyModel }
     $agyModelMut   = if ($env:RELAY_AGY_MODEL_MUTATOR)  { $env:RELAY_AGY_MODEL_MUTATOR }  else { $agyModel }
@@ -920,7 +929,7 @@ if ($Command -eq 'up') {
     # prompt is prepended to every turn instead, so the rules on form bind as hard on turn
     # 40 as on turn 1. The role charter stays a boot read - it is the casebook, and it is
     # long; this file is the law, and it is short.
-    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model sonnet --permission-mode $claudeMode --append-system-prompt-file `"$styleFile`" `"$valBoot`"`r`n"
+    $valLauncher = Write-Launcher 'validator' "& `"$claudeExe`" --model claude-sonnet-5-5 --permission-mode $claudeMode --append-system-prompt-file `"$styleFile`" `"$valBoot`"`r`n"
 
     # Scout: agy on the same Gemini tier as the executor (user's call, 2026-08-09; there
     # is no 3.6 Pro tier - see 'agy models'). Independence comes from role separation,
@@ -1170,103 +1179,6 @@ if ($Command -eq 'status') {
     exit 0
 }
 
-# ========================================================== HEALTH ===========
-# The check 'status' could never do. 'status' proves panes exist; this proves the
-# agents in them still work. Exits non-zero when any agent is unhealthy so a caller
-# cannot skim past a dead lane the way six task cycles did on 2026-08-10.
-if ($Command -eq 'health') {
-    $s = Get-State
-    $live = psmux ls 2>$null | Out-String
-    if (-not ($live -match "(?m)^$([regex]::Escape($s.session)):")) {
-        Write-Host "[relay] DOWN - no psmux session '$($s.session)'." -ForegroundColor Red
-        exit 1
-    }
-
-    $names = $script:AllAgents
-    if ($Agent -and $Agent -ne 'all') { $names = @($Agent) }
-
-    $unhealthy = 0
-    foreach ($n in $names) {
-        $line = "  {0,-10}" -f $n
-
-        # A relay started before this agent existed has no pane for it. Saying that
-        # plainly beats targeting 'relay:' with an empty pane id, which psmux happily
-        # resolves to something arbitrary.
-        if (-not (Get-PaneId $s $n)) {
-            Write-Host "$line ABSENT - this relay was started before the $n pane existed." -ForegroundColor Yellow
-            Write-Host "             rebuild it: relay.ps1 down; relay.ps1 up -Workspace `"$($s.workspace)`"" -ForegroundColor Yellow
-            $unhealthy++
-            continue
-        }
-        $t = Get-PaneTarget $s $n
-
-        # Uptime matters: the observed wedge took ~12.5h of uptime plus a long idle
-        # gap. Surfacing age turns "why did the scout die again" into a prediction.
-        $age = ''
-        if ($s.booted -and $s.booted.$n) {
-            $hrs = [math]::Round(((Get-Date) - [datetime]::Parse($s.booted.$n)).TotalHours, 1)
-            $age = " (up ${hrs}h)"
-        }
-
-        $cleared = Clear-BlockingPrompts $t
-        if ($cleared) { Write-Host "$line BLOCKED -> cleared $cleared$age" -ForegroundColor Yellow }
-
-        $fault = Get-PaneFault $t
-        if ($fault) {
-            Write-Host "$line FAULT: $fault$age" -ForegroundColor Red
-            Write-Host "             recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
-            if ($fault -like '*quota likely exhausted*') {
-                Write-Host "             or fall it to the free-model fallback: relay.ps1 restart -Agent $n -Provider opencode" -ForegroundColor Yellow
-            }
-            $unhealthy++
-            continue
-        }
-
-        # Checked before the busy test on purpose: a dead agent's pane is not busy and
-        # not faulted, so without this it falls through to the probe and merely looks
-        # slow. This is the check that names it as a crash.
-        if (-not (Test-AgentProcessAlive $s $n)) {
-            Write-Host "$line CRASHED - $(Get-AgentProcessName $s $n) is not running in that pane$age" -ForegroundColor Red
-            Write-Host "             the pane survived as a bare shell; recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
-            $unhealthy++
-            continue
-        }
-
-        if (Test-PaneBusy $t) {
-            Write-Host "$line BUSY (working - not probed)$age" -ForegroundColor Cyan
-            continue
-        }
-
-        if ($n -eq 'validator' -and -not $Deep) {
-            if (Test-PaneMatch (Get-PaneText $t) $script:BootedPatterns) {
-                Write-Host "$line IDLE at its prompt, no fault detected$age  (pass -Deep to probe it - costs Claude quota)" -ForegroundColor Gray
-            }
-            else {
-                Write-Host "$line NOT AT ITS PROMPT - neither booted nor faulted$age" -ForegroundColor Yellow
-                Write-Host "             inspect it: relay.ps1 capture -Agent validator" -ForegroundColor Yellow
-                $unhealthy++
-            }
-            continue
-        }
-
-        if (Test-AgentResponsive $t (Get-ProbeBudget $s $n)) {
-            Write-Host "$line OK - answered$age" -ForegroundColor Green
-        }
-        else {
-            Write-Host "$line UNRESPONSIVE - no answer to a liveness probe$age" -ForegroundColor Red
-            Write-Host "             recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
-            $unhealthy++
-        }
-    }
-
-    if ($unhealthy -gt 0) {
-        Write-Host "[relay] $unhealthy agent(s) unhealthy." -ForegroundColor Red
-        exit 1
-    }
-    Say "All checked agents healthy."
-    exit 0
-}
-
 # ========================================================= RESTART ===========
 # A wedged agy pane is fixed by restarting that process and nothing else - its
 # credentials are re-read clean at startup. Restarting only the broken pane keeps
@@ -1408,6 +1320,161 @@ function Restart-Agents($s, $names, $deep, $providerOverride = '') {
     }
     return $bad
 }
+
+# Is this pane allowed to fall to its opencode free-model launcher right now?
+# Returns 'opencode' or ''. Only executor/scout/mutator (never the validator, which is
+# Claude by design), only from agy (an opencode pane erroring falls through to a plain
+# restart, which stays on opencode via $state.providers), only if a launcher actually
+# got built at 'up' time, and only if the user has not opted out.
+#
+# Factored out because exhausted agy quota can arrive at EITHER restart path in
+# Invoke-Phase: as a fault (the quota line is on screen) or as a stall (agy keeps
+# spinning and prints nothing for minutes). Both need this same test.
+function Get-OcFallbackEligible($state, $agentName) {
+    if ($env:RELAY_NO_OPENCODE_FALLBACK) { return '' }
+    if (-not (@('executor','scout','mutator') -contains $agentName)) { return '' }
+    $curProvider = 'agy'
+    if ($state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) {
+        $curProvider = $state.providers.$agentName
+    }
+    if ($curProvider -ne 'agy') { return '' }
+    $ocLauncher = $null
+    if ($state.ocLaunchers) { $ocLauncher = $state.ocLaunchers.$agentName }
+    if ($ocLauncher -and (Test-Path $ocLauncher)) { return 'opencode' }
+    return ''
+}
+
+# ========================================================== HEALTH ===========
+# The check 'status' could never do. 'status' proves panes exist; this proves the
+# agents in them still work. Exits non-zero when any agent is unhealthy so a caller
+# cannot skim past a dead lane the way six task cycles did on 2026-08-10.
+#
+# health ACTS on one fault and only one: agy quota exhaustion, which it resolves by
+# falling that pane to its opencode free-model launcher. Everything else stays
+# report-only, because health's value as a diagnostic depends on it not thrashing panes
+# - a wedged-token or crashed pane still just prints its recover line.
+#
+# It deliberately does NOT go through Assert-AgentReady. That function gates on the
+# per-run restart budget, which only autopilot sets, so the handover would silently
+# refuse here. A user typing 'health' is the budget. It also sits below Restart-Agents
+# and Get-OcFallbackEligible for that reason: a script-level block can only call
+# functions whose definitions have already run.
+#
+# Opt out with -NoAct or RELAY_HEALTH_NO_ACT=1 for a purely read-only check, e.g. from a
+# script that only wants the exit code. Ported from relay.sh on 2026-10-11.
+if ($Command -eq 'health') {
+    $act = -not ($NoAct -or $env:RELAY_HEALTH_NO_ACT)
+    $s = Get-State
+    $live = psmux ls 2>$null | Out-String
+    if (-not ($live -match "(?m)^$([regex]::Escape($s.session)):")) {
+        Write-Host "[relay] DOWN - no psmux session '$($s.session)'." -ForegroundColor Red
+        exit 1
+    }
+
+    $names = $script:AllAgents
+    if ($Agent -and $Agent -ne 'all') { $names = @($Agent) }
+
+    $unhealthy = 0
+    foreach ($n in $names) {
+        $line = "  {0,-10}" -f $n
+
+        # A relay started before this agent existed has no pane for it. Saying that
+        # plainly beats targeting 'relay:' with an empty pane id, which psmux happily
+        # resolves to something arbitrary.
+        if (-not (Get-PaneId $s $n)) {
+            Write-Host "$line ABSENT - this relay was started before the $n pane existed." -ForegroundColor Yellow
+            Write-Host "             rebuild it: relay.ps1 down; relay.ps1 up -Workspace `"$($s.workspace)`"" -ForegroundColor Yellow
+            $unhealthy++
+            continue
+        }
+        $t = Get-PaneTarget $s $n
+
+        # Uptime matters: the observed wedge took ~12.5h of uptime plus a long idle
+        # gap. Surfacing age turns "why did the scout die again" into a prediction.
+        $age = ''
+        if ($s.booted -and $s.booted.$n) {
+            $hrs = [math]::Round(((Get-Date) - [datetime]::Parse($s.booted.$n)).TotalHours, 1)
+            $age = " (up ${hrs}h)"
+        }
+
+        $cleared = Clear-BlockingPrompts $t
+        if ($cleared) { Write-Host "$line BLOCKED -> cleared $cleared$age" -ForegroundColor Yellow }
+
+        $fault = Get-PaneFault $t
+        if ($fault) {
+            $hprov = ''
+            if ($act -and $fault -like '*quota likely exhausted*') { $hprov = Get-OcFallbackEligible $s $n }
+            if ($hprov) {
+                Write-Host "$line FAULT: $fault$age - handing it over..." -ForegroundColor Yellow
+                $bad = @(Restart-Agents $s @($n) $false $hprov)
+                if ($bad.Count -eq 0) {
+                    Write-Host "$line HANDED OVER - now on the opencode free model (degraded vs agy) and responding" -ForegroundColor Green
+                    continue
+                }
+                Write-Host "$line HANDOVER FAILED - no answer even after falling to opencode$age" -ForegroundColor Red
+                Write-Host "             inspect it: relay.ps1 capture -Agent $n" -ForegroundColor Yellow
+                $unhealthy++
+                continue
+            }
+            Write-Host "$line FAULT: $fault$age" -ForegroundColor Red
+            Write-Host "             recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
+            if ($fault -like '*quota likely exhausted*') {
+                if (-not $act) {
+                    Write-Host "             or fall it to the free-model fallback: relay.ps1 restart -Agent $n -Provider opencode" -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host "             no opencode fallback available for it (see Get-OcFallbackEligible)" -ForegroundColor Yellow
+                }
+            }
+            $unhealthy++
+            continue
+        }
+
+        # Checked before the busy test on purpose: a dead agent's pane is not busy and
+        # not faulted, so without this it falls through to the probe and merely looks
+        # slow. This is the check that names it as a crash.
+        if (-not (Test-AgentProcessAlive $s $n)) {
+            Write-Host "$line CRASHED - $(Get-AgentProcessName $s $n) is not running in that pane$age" -ForegroundColor Red
+            Write-Host "             the pane survived as a bare shell; recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
+            $unhealthy++
+            continue
+        }
+
+        if (Test-PaneBusy $t) {
+            Write-Host "$line BUSY (working - not probed)$age" -ForegroundColor Cyan
+            continue
+        }
+
+        if ($n -eq 'validator' -and -not $Deep) {
+            if (Test-PaneMatch (Get-PaneText $t) $script:BootedPatterns) {
+                Write-Host "$line IDLE at its prompt, no fault detected$age  (pass -Deep to probe it - costs Claude quota)" -ForegroundColor Gray
+            }
+            else {
+                Write-Host "$line NOT AT ITS PROMPT - neither booted nor faulted$age" -ForegroundColor Yellow
+                Write-Host "             inspect it: relay.ps1 capture -Agent validator" -ForegroundColor Yellow
+                $unhealthy++
+            }
+            continue
+        }
+
+        if (Test-AgentResponsive $t (Get-ProbeBudget $s $n)) {
+            Write-Host "$line OK - answered$age" -ForegroundColor Green
+        }
+        else {
+            Write-Host "$line UNRESPONSIVE - no answer to a liveness probe$age" -ForegroundColor Red
+            Write-Host "             recover with: relay.ps1 restart -Agent $n" -ForegroundColor Yellow
+            $unhealthy++
+        }
+    }
+
+    if ($unhealthy -gt 0) {
+        Write-Host "[relay] $unhealthy agent(s) unhealthy." -ForegroundColor Red
+        exit 1
+    }
+    Say "All checked agents healthy."
+    exit 0
+}
+
 
 if ($Command -eq 'restart') {
     if (-not $Agent) { Fail "-Agent required (executor|scout|mutator|validator|all)" }
@@ -2027,29 +2094,6 @@ function Invoke-Recycle($state, $agentName, $logPath, $maxHours) {
     Write-RunLog $logPath "recycling $agentName preemptively (up $([math]::Round($hrs,1))h)"
     $bad = Restart-Agents $state @($agentName) $false
     if ($bad -and $bad.Count -gt 0) { Write-RunLog $logPath "WARNING: $agentName did not come back cleanly" }
-}
-
-# Is this pane allowed to fall to its opencode free-model launcher right now?
-# Returns 'opencode' or ''. Only executor/scout/mutator (never the validator, which is
-# Claude by design), only from agy (an opencode pane erroring falls through to a plain
-# restart, which stays on opencode via $state.providers), only if a launcher actually
-# got built at 'up' time, and only if the user has not opted out.
-#
-# Factored out because exhausted agy quota can arrive at EITHER restart path in
-# Invoke-Phase: as a fault (the quota line is on screen) or as a stall (agy keeps
-# spinning and prints nothing for minutes). Both need this same test.
-function Get-OcFallbackEligible($state, $agentName) {
-    if ($env:RELAY_NO_OPENCODE_FALLBACK) { return '' }
-    if (-not (@('executor','scout','mutator') -contains $agentName)) { return '' }
-    $curProvider = 'agy'
-    if ($state.providers -and ($state.providers.PSObject.Properties.Name -contains $agentName)) {
-        $curProvider = $state.providers.$agentName
-    }
-    if ($curProvider -ne 'agy') { return '' }
-    $ocLauncher = $null
-    if ($state.ocLaunchers) { $ocLauncher = $state.ocLaunchers.$agentName }
-    if ($ocLauncher -and (Test-Path $ocLauncher)) { return 'opencode' }
-    return ''
 }
 
 function Assert-AgentReady($state, $agentName, $logPath) {
