@@ -1540,6 +1540,19 @@ function Invoke-Dispatch($s, $agentName, $taskPath, $note = '', $phase = '') {
     $fault = Get-PaneFault $target
     if ($fault) { return $fault }
 
+    # The validator is never recycled (see Invoke-Recycle), so without this one Claude
+    # session grades every task of the run and each grade pays for all the ones before
+    # it, with task N-1's details still in reach while it reads task N. Every grade is
+    # self-contained on the bus and the dispatch line names the charter to re-read;
+    # house-style is in the appended system prompt, which /clear keeps (checked live
+    # against Claude Code 2.1.296). Skipped on a busy pane, where /clear would queue
+    # behind the turn. RELAY_VALIDATOR_FRESH=0 turns it off.
+    if ($agentName -eq 'validator' -and $env:RELAY_VALIDATOR_FRESH -ne '0' -and -not (Test-PaneBusy $target)) {
+        Send-Line $target '/clear'
+        Start-Sleep -Milliseconds $script:RepaintSettleMs
+        Say "Cleared validator context before dispatching"
+    }
+
     $msg = Get-DispatchMessage $agentName $rel $taskBase $phase
     if ($note) { $msg = "$msg $note" }
     Send-Line $target $msg

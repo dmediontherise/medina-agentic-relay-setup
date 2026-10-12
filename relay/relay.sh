@@ -476,6 +476,10 @@ Medina Agentic Relay - tmux control plane
     default: opencode/big-pickle, one of opencode Zen's free $0 models ('opencode
     models --verbose' lists the rest). Opt out of the automatic fallback entirely
     with RELAY_NO_OPENCODE_FALLBACK=1.
+
+  validator context: every dispatch to the validator sends /clear first, so each
+  grade starts from the bus alone instead of every earlier grade of the run. Turn
+  it off with RELAY_VALIDATOR_FRESH=0.
 EOF
 }
 
@@ -1178,6 +1182,18 @@ do_dispatch() {
   [ -n "$cleared" ] && say "Cleared $cleared in $agent before dispatching"
   f="$(pane_fault "$target")"
   if [ -n "$f" ]; then printf '%s' "$f"; return 1; fi
+  # The validator is never recycled (see recycle_if_old), so without this one Claude
+  # session grades every task of the run and each grade pays for all the ones before
+  # it, with task N-1's details still in reach while it reads task N. Every grade is
+  # self-contained on the bus and the dispatch line names the charter to re-read;
+  # house-style is in the appended system prompt, which /clear keeps (checked live
+  # against Claude Code 2.1.296). Skipped on a busy pane, where /clear would queue
+  # behind the turn. RELAY_VALIDATOR_FRESH=0 turns it off.
+  if [ "$agent" = "validator" ] && [ "${RELAY_VALIDATOR_FRESH:-1}" != "0" ] && ! pane_busy "$target"; then
+    send_line "$target" "/clear"
+    sleep "$RELAY_REPAINT_SETTLE"
+    say "Cleared validator context before dispatching"
+  fi
   msg="$(dispatch_message "$agent" "$rel" "$base" "$phase")"
   [ -n "$note" ] && msg="$msg $note"
   send_line "$target" "$msg"
