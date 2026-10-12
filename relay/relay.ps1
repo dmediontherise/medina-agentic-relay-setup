@@ -523,6 +523,7 @@ function Test-AgentProcessAlive($state, $agentName) {
 # modals and a dead process all in one place, so no caller has to remember all three.
 # Returns $null when the agent looks usable, otherwise the reason it does not.
 function Get-AgentTrouble($state, $agentName) {
+    Sync-StateFromDisk $state
     if (-not (Get-PaneId $state $agentName)) {
         return "no pane for '$agentName' - this relay was started before that agent existed"
     }
@@ -1202,6 +1203,27 @@ if ($Command -eq 'status') {
 # already on ($s.providers.<name>, default 'agy') - a preemptive recycle or a keepalive
 # miss on a pane already running its opencode fallback must restart it back into
 # opencode, not silently bounce it to agy.
+# Copy the mutable fields (pane ids, providers, boot times) from the state file into an
+# in-memory state object, in place so every caller holding it sees the update.
+#
+# A long-running autopilot reads the state once and keeps the object, but a manual
+# 'relay.ps1 restart -Agent <name> -Provider ...' from another shell rewrites the file
+# underneath it. Without this, autopilot's next Restart-Agents (keepalive miss,
+# preemptive recycle, fault restart) saved its stale providers and pane ids back over
+# the manual switch, and health then reported the hand-switched pane as CRASHED. Disk
+# is the source of truth: every writer saves immediately after changing anything.
+function Sync-StateFromDisk($s) {
+    if (-not $s -or -not (Test-Path $StateFile)) { return }
+    try { $d = Get-Content $StateFile -Raw | ConvertFrom-Json } catch { return }
+    if (-not $d -or $d.session -ne $s.session) { return }
+    foreach ($f in 'executorPane', 'validatorPane', 'scoutPane', 'mutatorPane', 'providers', 'booted') {
+        if ($d.PSObject.Properties.Name -contains $f) {
+            if ($s.PSObject.Properties.Name -contains $f) { $s.$f = $d.$f }
+            else { $s | Add-Member -NotePropertyName $f -NotePropertyValue $d.$f }
+        }
+    }
+}
+
 function Restart-Agents($s, $names, $deep, $providerOverride = '') {
     if (-not $s.launchers) {
         Fail "This relay was started before launchers were recorded. Run 'down' then 'up' once to enable restart."
@@ -1209,6 +1231,7 @@ function Restart-Agents($s, $names, $deep, $providerOverride = '') {
     if ($providerOverride -and @($names).Count -gt 1) {
         Fail "Restart-Agents: -Provider requires a single agent, got '$($names -join ', ')'"
     }
+    Sync-StateFromDisk $s   # pick up a manual -Provider switch made from another shell
 
     $win = "$($s.session):agents"
     $targets = @()
@@ -2127,6 +2150,7 @@ function Invoke-HelperRunner($run, [string[]]$helperArgs, [int]$timeoutMs) {
 #
 # Neither touches the validator: it is the one pane where a probe costs real money.
 function Invoke-Keepalive($state, $agentName, $logPath) {
+    Sync-StateFromDisk $state
     if ($agentName -eq 'validator') { return }
     if (-not (Get-PaneId $state $agentName)) { return }
     $t = Get-PaneTarget $state $agentName
@@ -2155,6 +2179,7 @@ function Invoke-Recycle($state, $agentName, $logPath, $maxHours) {
 }
 
 function Assert-AgentReady($state, $agentName, $logPath) {
+    Sync-StateFromDisk $state
     $trouble = Get-AgentTrouble $state $agentName
     if (-not $trouble) { return $true }
     $left = $script:RestartBudget[$agentName]
