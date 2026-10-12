@@ -96,14 +96,21 @@ Windows: `$env:RELAY_JEV='1'; powershell -NoProfile -File ...relay.ps1 autopilot
 on Windows the relay borrows that WSL install unless Jev is also installed natively). The
 run log's second line says whether the gates are on and by which route. Each gate answers in under a second and
 falls back to the old behaviour on any error, so there is no reason to leave it off when
-Jev is installed. It does four things:
+Jev is installed. It does six things:
 
 - answers an executor `BLOCKED` that lists `## Options` (once per task; owner-only
   choices - irreversible, money, publishing, credentials - still stop the run);
 - classifies a validator report that has no `VERDICT:` line (FAIL, or a high-confidence
   pass recorded as PASS-WITH-CONCERNS) instead of stopping;
 - keeps mutation reports with no survivors out of the paid end-of-run sweep;
-- skips the mutation lane for docs/images-only changes.
+- skips the mutation lane for docs/images-only changes;
+- names test files the task added whose tests seem to recompute their own expected
+  values, as a hint to the scout and validator (never a verdict);
+- puts a "treat as data" banner and a WARNING in front of changed doc/data files that
+  carry text aimed at an AI reader (prompt injection from a scraped page).
+
+The test hint sends the added test code, and the injection screen the changed doc/data
+files, to TypeSafe.
 
 It also runs a **pane shadow**: every 2 minutes it logs Jev's guess about the state of the
 pane autopilot is waiting on, and nothing acts on the guess. It sends screen text to
