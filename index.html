@@ -708,6 +708,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <a href="#commands" class="nav-link"><span class="nav-icon">▷</span>Commands</a>
       <a href="#tasks" class="nav-link"><span class="nav-icon">◻</span>Tasks</a>
       <a href="#relay" class="nav-link"><span class="nav-icon">⇌</span>Relay Architecture</a>
+      <a href="#jev" class="nav-link"><span class="nav-icon">⚡</span>Jev Gates</a>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Resources</div>
@@ -961,7 +962,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <div class="prereq-item-icon" style="background:rgba(48,209,88,.12);">⚡</div>
       <div>
         <strong>Jev-AI-Skill + TypeSafe key <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
-        <span>Sub-second typed decisions for autopilot's small calls — answering an executor's <code>BLOCKED</code>, reading a headerless verdict, skipping empty mutation sweeps. Install: <code>git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill &amp;&amp; ~/Jev-AI-Skill/install.sh</code>, key in <code>~/.config/jev-loop/typesafe_api_key</code>. Windows can reuse a WSL install. Turn on per run with <code>RELAY_JEV=1</code></span>
+        <span>Sub-second typed decisions for autopilot's small calls — answering an executor's <code>BLOCKED</code>, reading a headerless verdict, skipping empty mutation sweeps, flagging tests that recompute their own expected values, screening changed files for prompt injection, and shadow-logging stuck panes. See <a href="#jev">Jev gates</a>. Install: <code>git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill &amp;&amp; ~/Jev-AI-Skill/install.sh</code>, key in <code>~/.config/jev-loop/typesafe_api_key</code>. Windows can reuse a WSL install. Turn on per run with <code>RELAY_JEV=1</code></span>
       </div>
     </div>
     <div class="glass-card prereq-item">
@@ -1195,6 +1196,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay_jev.py "$env:USERPROFILE\.claude\relay\" -Force</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\relay_cite.py "$env:USERPROFILE\.claude\relay\" -Force</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item relay\charters "$env:USERPROFILE\.claude\relay\" -Recurse -Force</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
@@ -1399,7 +1401,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
-              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py relay/relay_cite.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp commands/*.md ~/.claude/commands/</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
@@ -1503,7 +1505,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cd medina-agentic-relay-setup</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">mkdir -p ~/.claude/relay ~/.claude/commands</span></span>
-              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp relay/relay.sh relay/relay_jev.py relay/relay_cite.py ~/.claude/relay/ &amp;&amp; chmod +x ~/.claude/relay/relay.sh</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp -r relay/charters ~/.claude/relay/</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">cp commands/*.md ~/.claude/commands/</span></span>
             </div>
@@ -1724,10 +1726,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <tr><td class="mono">/update-config</td><td>Opens the config skill to modify settings.json and configure automated hooks</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/brainstorm</td><td>Triggers design dialogue for a new feature or idea</td><td><span class="status-badge st-dep">→ brainstorming skill</span></td></tr>
       <tr><td class="mono">/write-plan</td><td>Creates an implementation plan from a spec</td><td><span class="status-badge st-dep">→ writing-plans skill</span></td></tr>
-      <tr><td class="mono">/implement</td><td>Locates the latest plan and triggers Antigravity/Gemini execution in a new terminal</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/implement</td><td>Turns the latest plan into task files and hands them to autopilot — agy executes, scouts and mutates, Sonnet validates, unattended</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/execute-plan</td><td>Executes a previously written plan (redirected to /implement handoff)</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-new</td><td>Scaffolds a new project (git init, .gitignore, seed task) and brings the relay up on it</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/relay-up</td><td>Brings up the psmux/tmux relay on an existing project — executor, scout and validator panes</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/relay-up</td><td>Brings up the psmux/tmux relay on an existing project — executor, scout, mutator and validator panes</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/relay-auto</td><td>Runs the whole queue unattended: autopilot drives every pending task through execute → scout → validate until it drains</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-task</td><td>Runs a full cycle: executor implements, scout gathers evidence, validator grades</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-status</td><td>Session health, pane state, and what is on the file bus</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-down</td><td>Tears the relay session down</td><td><span class="status-badge st-active">Active</span></td></tr>
@@ -1770,19 +1773,20 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   <p style="margin-top:12px;">
     The original design was a <strong style="color:var(--text)">one-way handoff</strong> — Claude planned, fired a
     detached window, and never heard back. You found out whether it worked by reading the diff. It is now a
-    <strong style="color:var(--text)">closed loop</strong>: four roles in live <span class="mono">tmux</span> /
+    <strong style="color:var(--text)">closed loop</strong>: four agents in live <span class="mono">tmux</span> /
     <span class="mono">psmux</span> panes, coordinating over a file bus at <span class="mono">.relay/</span>.
   </p>
 
   <div class="glass-card" style="padding:24px;margin:24px 0;">
-    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The four roles</h3>
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The five roles</h3>
     <table class="glass-table" style="margin-top:0;">
       <thead><tr><th>Role</th><th>Model</th><th>Job</th></tr></thead>
       <tbody>
         <tr><td><strong style="color:var(--text)">Orchestrator</strong></td><td class="mono">Claude Opus</td><td>Writes the task spec, dispatches, decides. Your interactive session.</td></tr>
         <tr><td><strong style="color:var(--text)">Executor</strong></td><td class="mono">agy · gemini-3.8-flash-medium</td><td>Implements the task. Never grades its own work.</td></tr>
         <tr><td><strong style="color:var(--text)">Scout</strong></td><td class="mono">agy · gemini-3.8-flash-medium</td><td>Writes its probes from the spec before the code exists, then re-runs verification, probes edge cases, audits test assertions. Records <strong style="color:var(--text)">observations only</strong> — never a verdict.</td></tr>
-        <tr><td><strong style="color:var(--text)">Validator</strong></td><td class="mono">Claude Sonnet 5.5</td><td>Grades spec vs. evidence. Does not fix the code it judges.</td></tr>
+        <tr><td><strong style="color:var(--text)">Mutator</strong></td><td class="mono">agy · gemini-3.8-flash-medium</td><td>Breaks the code on purpose in an isolated snapshot and reports which tests failed to notice. Runs in parallel, never on the critical path.</td></tr>
+        <tr><td><strong style="color:var(--text)">Validator</strong></td><td class="mono">Claude Sonnet 5.5</td><td>Grades spec vs. evidence, starting every grade from an empty context. Does not fix the code it judges; on a FAIL, writes the follow-up task.</td></tr>
       </tbody>
     </table>
   </div>
@@ -1840,13 +1844,45 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <tr><td class="mono">.relay/results/NNN-slug.md</td><td>Executor</td><td>the claim</td></tr>
         <tr><td class="mono">.relay/evidence/NNN-slug.md</td><td>Scout</td><td>the observation</td></tr>
         <tr><td class="mono">.relay/reports/NNN-slug.md</td><td>Validator</td><td>the verdict</td></tr>
-        <tr><td class="mono">.relay/probe/</td><td>Scout</td><td>throwaway edge-case tests (scratch)</td></tr>
+        <tr><td class="mono">.relay/mutation/NNN-slug.md</td><td>Mutator</td><td>surviving mutants</td></tr>
+        <tr><td class="mono">.relay/probe/&lt;task&gt;/</td><td>Scout</td><td>throwaway probes, plus <span class="mono">PREBRIEF.md</span> written from the spec before any code exists</td></tr>
+        <tr><td class="mono">.relay/mutants/&lt;task&gt;/</td><td>Mutator</td><td>isolated worktree snapshot per task</td></tr>
+        <tr><td class="mono">.relay/citations/&lt;task&gt;.md</td><td>autopilot</td><td>citation-check findings for that task</td></tr>
+        <tr><td class="mono">.relay/jev/decisions.jsonl</td><td>autopilot</td><td>every Jev gate decision and pane-shadow answer (<span class="mono">RELAY_JEV=1</span>)</td></tr>
+        <tr><td class="mono">.relay/logs/</td><td>autopilot</td><td>run logs</td></tr>
+        <tr><td class="mono">.relay/STOP</td><td>you</td><td>touch it to halt an autopilot run cleanly</td></tr>
       </tbody>
     </table>
     <p style="font-size:13px;color:var(--text2);margin-top:14px;">
       Each agent owns exactly one channel and is forbidden by its charter from writing to the others. Where the
       result and the evidence disagree, <strong style="color:var(--text)">the evidence wins</strong>.
     </p>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🧹</span>
+    <div>
+      <strong style="color:var(--text)">The validator starts every grade with an empty context.</strong> The agy panes
+      get recycled; the validator never did, so one Claude session used to grade a whole run — each grade paid for
+      every grade before it, and task N-1 stayed in reach while it read task N. Every dispatch now sends
+      <span class="mono">/clear</span> first (skipped if the pane is busy). House-style lives in the appended system
+      prompt, which survives <span class="mono">/clear</span>, and everything about the task is on the bus. Opt out with
+      <span class="mono">RELAY_VALIDATOR_FRESH=0</span>.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🔗</span>
+    <div>
+      <strong style="color:var(--text)">Citation check after every executor result.</strong> 7 of 30 recorded validator
+      FAILs were a cited source that does not say what it is cited for. <span class="mono">relay_cite.py</span> — plain
+      code, no model — fetches every source the task <em>added</em> and flags a dead link, a deep link that redirects away,
+      a <span class="mono">quote</span> missing from the page, or a number the page does not state. JavaScript-rendered
+      and robots-blocked pages are listed as unverifiable, never flagged. Findings send the task back to the executor
+      <strong style="color:var(--text)">once</strong>; what remains reaches the scout and validator as a note. Replayed
+      on old snapshots it flagged 5/5 defective tasks and 1/5 others. <span class="mono">RELAY_CITE=0</span> turns it
+      off; <span class="mono">RELAY_CITE_BOUNCE=0</span> keeps the note without the bounce.
+    </div>
   </div>
 
   <div class="info-box warn-box">
@@ -1876,21 +1912,139 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </div>
 </section>
 
+<!-- JEV GATES -->
+<section id="jev" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Architecture</div>
+  <h2>Jev <span class="gradient-text">Gates</span></h2>
+  <p>
+    <a href="https://github.com/King4s/Jev-AI-Skill" target="_blank" rel="noopener">Jev-AI-Skill</a> gives autopilot
+    access to Jev, TypeSafe System One's fast decision model. It answers a typed question — with a confidence — in
+    about a third of a second. Turn it on per run with <span class="mono">RELAY_JEV=1</span>; leave it off and the
+    relay behaves exactly as before.
+  </p>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Why it is worth turning on</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Problem without Jev</th><th>What Jev changes</th></tr></thead>
+      <tbody>
+        <tr><td><strong style="color:var(--text)">Small calls stop an unattended run.</strong> An executor that hits a reversible spec choice reports <span class="mono">BLOCKED</span>, and the queue waits for a human who may be asleep.</td><td>Jev picks from the executor's <span class="mono">## Options</span> (once per task, never an owner-only choice like publishing) and the run keeps going.</td></tr>
+        <tr><td><strong style="color:var(--text)">Small calls spend the expensive seat.</strong> The validator is the only pane paying Claude quota; every extra turn it takes is the costliest token in the run.</td><td>Decisions that do not need judgment — a headerless verdict, an empty mutation sweep, a docs-only change — are settled by Jev or by plain code before Claude is asked.</td></tr>
+        <tr><td><strong style="color:var(--text)">Some failures went unchecked.</strong> 8 of 71 logged verdicts had no <span class="mono">VERDICT:</span> line and were silently counted as passes. Tautological tests and injected text in scraped files reached the reviewers unflagged.</td><td>Headerless reports are recovered (108/115 right on past reports); suspect tests and injected text are named to the scout and validator before they read.</td></tr>
+        <tr><td><strong style="color:var(--text)">Dead panes burn the most wall-clock time.</strong> Stalls and 30-minute timeouts are the largest dead time in 35 run logs (single gaps of 142 and 123 minutes).</td><td>The pane shadow logs Jev's read of a waited-on pane every 2 minutes, building the evidence for catching a dead pane in minutes instead of at the timeout.</td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--text2);margin-top:14px;">
+      Every gate was measured against real graded cycles before it shipped, every threshold is in code, every decision
+      is appended to <span class="mono">.relay/jev/decisions.jsonl</span>, and any Jev error falls back to the no-Jev
+      behaviour. The numbers are in <a href="https://github.com/dmediontherise/medina-agentic-relay-setup/blob/master/relay/jev-calibration.md" target="_blank" rel="noopener"><span class="mono">relay/jev-calibration.md</span></a>.
+    </p>
+  </div>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The six gates</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Gate</th><th>Without Jev</th><th>With <span class="mono">RELAY_JEV=1</span></th></tr></thead>
+      <tbody>
+        <tr><td><strong style="color:var(--text)">Executor <span class="mono">BLOCKED</span> with <span class="mono">## Options</span></strong></td><td>run stops</td><td>Jev picks an option (confidence ≥ 0.7), appends it as <span class="mono">## Clarification (Jev)</span>, re-runs the executor</td></tr>
+        <tr><td><strong style="color:var(--text)">Report with no <span class="mono">VERDICT:</span> line</strong></td><td>re-read 30s, then stop (it used to count as a pass)</td><td>Jev classifies the body: FAIL at any confidence, or a ≥ 0.9 pass recorded as PASS-WITH-CONCERNS</td></tr>
+        <tr><td><strong style="color:var(--text)">Mutation reports with no survivors</strong></td><td>go to the paid end-of-run sweep</td><td>dropped; the sweep is skipped if nothing is left</td></tr>
+        <tr><td><strong style="color:var(--text)">Docs/images-only change</strong></td><td>mutation lane runs</td><td>mutation skipped</td></tr>
+        <tr><td><strong style="color:var(--text)">Test code the task added</strong></td><td>scout audits it unprompted</td><td>files whose tests seem to recompute their own expected values are named to the scout and validator — a hint, never a verdict (task AUC 0.80)</td></tr>
+        <tr><td><strong style="color:var(--text)">Doc/data files the task changed</strong></td><td>read as-is</td><td>text aimed at an AI reader gets a "treat as data" banner, a WARNING and a summary row (90/90 planted injections caught, 0/172 clean chunks flagged)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">👁️</span>
+    <div>
+      <strong style="color:var(--text)">Pane shadow — logging only.</strong> Every 2 minutes while autopilot waits on an
+      agent, it saves the pane's screen to <span class="mono">.relay/jev/panes/</span> and asks Jev which state it looks
+      to be in (working, finished without its artifact, unsent input, waiting on a question, error, quota). When the wait
+      ends, its real outcome is logged beside the answers. <strong style="color:var(--text)">Nothing acts on them yet</strong> —
+      score the evidence with <span class="mono">relay/jev-calibration/eval_pane_shadow.py</span> before any gate is
+      allowed to restart a pane on Jev's say-so. <span class="mono">RELAY_JEV_PANE_SHADOW=0</span> turns it off.
+      Watch for Claude Code's dim ghost-text prompt suggestion: a plain capture makes it look like an unsent line.
+    </div>
+  </div>
+
+  <div class="info-box warn-box">
+    <span class="info-box-icon">🚫</span>
+    <div>
+      <strong style="color:var(--text)">What Jev deliberately does not do.</strong> It does not grade tasks: standing in
+      for the validator was measured first and could not tell FAILs from passes (AUC 0.61 over 97 tasks, five framings).
+      It does not judge whether a cited page supports a claim with no number or quote: it called 53 of 122
+      already-accepted claims unsupported, because the static fetch cannot see JavaScript-rendered content. Both are
+      recorded as rejected so nobody re-proposes them without new measurements.
+    </div>
+  </div>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Turn it on</h3>
+    <div class="term-block">
+      <div class="tb-bar">
+        <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+        <span class="tb-label">bash · macOS / Linux / WSL</span>
+        <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+      </div>
+      <div class="tb-body">
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill &amp;&amp; ~/Jev-AI-Skill/install.sh</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">mkdir -p ~/.config/jev-loop &amp;&amp; chmod 700 ~/.config/jev-loop</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">read -rsp "TypeSafe key: " k &amp;&amp; printf '%s' "$k" &gt; ~/.config/jev-loop/typesafe_api_key &amp;&amp; unset k</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">chmod 600 ~/.config/jev-loop/typesafe_api_key</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check</span></span>
+        <span class="tbb-div"><span class="c-comment"># then, per run</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot</span></span>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-top:14px;">
+      <strong style="color:var(--text)">Windows:</strong> set <span class="mono">$env:RELAY_JEV='1'</span> before
+      <span class="mono">relay.ps1 autopilot</span>. It runs the same <span class="mono">relay_jev.py</span> either natively
+      (a Windows Python that can import <span class="mono">jev_mcp</span>) or by borrowing the WSL install through
+      <span class="mono">wsl.exe</span> — one install, one key. Workspaces must be on a drive path for the WSL route.
+      Thresholds: <span class="mono">RELAY_JEV_VERDICT_CONF</span> (0.9), <span class="mono">RELAY_JEV_DECIDE_CONF</span> (0.7),
+      <span class="mono">RELAY_JEV_TESTS_CONF</span> (0.5), <span class="mono">RELAY_JEV_INJECT_CONF</span> (0.7).
+      The test hint, injection screen and pane shadow send test code, changed files and screen text to TypeSafe — leave
+      Jev off for work that must stay local.
+    </p>
+  </div>
+</section>
+
 <!-- RESOURCES -->
 <section id="resources" class="reveal">
   <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Resources</div>
   <h2>Repos &amp; Links</h2>
   <p>Everything that powers this setup.</p>
 
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">What's in the repo</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Path</th><th>Is</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">relay/relay.ps1</td><td>Windows / psmux control plane</td></tr>
+        <tr><td class="mono">relay/relay.sh</td><td>macOS / Linux / tmux control plane (bash 3.2+)</td></tr>
+        <tr><td class="mono">relay/relay_jev.py</td><td>Jev gates helper, called by both (opt-in: <span class="mono">RELAY_JEV=1</span>)</td></tr>
+        <tr><td class="mono">relay/relay_cite.py</td><td>citation check, called by both (on; <span class="mono">RELAY_CITE=0</span> turns it off)</td></tr>
+        <tr><td class="mono">relay/jev-calibration.md</td><td>what each gate was measured against before it shipped, and what was rejected</td></tr>
+        <tr><td class="mono">relay/jev-calibration/</td><td><span class="mono">eval_verdict</span>, <span class="mono">eval_pane_shadow</span>, <span class="mono">eval_cite</span>, <span class="mono">eval_tests</span>, <span class="mono">eval_inject</span>, <span class="mono">eval_support</span> — re-run them when the Jev model changes</td></tr>
+        <tr><td class="mono">relay/charters/</td><td><span class="mono">executor.md</span>, <span class="mono">scout.md</span>, <span class="mono">mutator.md</span>, <span class="mono">validator.md</span>, <span class="mono">house-style.md</span></td></tr>
+        <tr><td class="mono">commands/</td><td><span class="mono">relay-new</span>, <span class="mono">relay-up</span>, <span class="mono">relay-task</span>, <span class="mono">relay-auto</span>, <span class="mono">relay-status</span>, <span class="mono">relay-down</span>, <span class="mono">implement</span>, <span class="mono">execute-plan</span>, <span class="mono">sync-superpowers</span>, plus the deprecated <span class="mono">brainstorm</span> / <span class="mono">write-plan</span> aliases</td></tr>
+        <tr><td class="mono">README.md</td><td>full reference: install, use, troubleshooting, what has actually been verified</td></tr>
+        <tr><td class="mono">index.html</td><td>this page</td></tr>
+      </tbody>
+    </table>
+  </div>
+
   <div class="resource-grid">
     <a class="glass-card resource-card" href="https://github.com/dmediontherise/medina-agentic-relay-setup" target="_blank">
       <h4>The relay control plane</h4>
-      <p>This repo. <span class="mono">relay.ps1</span> (Windows/psmux) and <span class="mono">relay.sh</span> (macOS·Linux/tmux), the three agent charters, and the Claude Code slash commands.</p>
+      <p>This repo. <span class="mono">relay.ps1</span> (Windows/psmux) and <span class="mono">relay.sh</span> (macOS·Linux/tmux), the Jev and citation helpers, the agent charters, the calibration evidence, and the Claude Code slash commands.</p>
       <div class="resource-repo">github.com/dmediontherise/medina-agentic-relay-setup</div>
     </a>
     <a class="glass-card resource-card" href="https://github.com/King4s/Jev-AI-Skill" target="_blank">
       <h4>Jev-AI-Skill <span style="color:var(--text2);font-weight:400;">(optional)</span></h4>
-      <p>Jev, TypeSafe System One's fast decision model, behind autopilot's opt-in <span class="mono">RELAY_JEV=1</span> gates. It settles small calls; it never grades a task.</p>
+      <p>Jev, TypeSafe System One's fast decision model, behind autopilot's opt-in <span class="mono">RELAY_JEV=1</span> gates and pane shadow. It settles small calls; it never grades a task.</p>
       <div class="resource-repo">github.com/King4s/Jev-AI-Skill</div>
     </a>
     <a class="glass-card resource-card" href="https://antigravity.google" target="_blank">
