@@ -575,7 +575,10 @@ Replayed against old snapshots, the check flagged all 5 tasks that had a citatio
 and 1 of 5 that did not; the numbers are in `relay/jev-calibration.md`.
 
 `RELAY_CITE=0` turns it off. `RELAY_CITE_BOUNCE=0` keeps the note but never sends a task
-back. Run it by hand with `python3 relay_cite.py <workspace> <task-id>`. On Windows it uses
+back. Claims with no number or quote are only link-checked. A Jev "does the page support
+this?" step was measured and rejected: it called a third of already-accepted claims
+unsupported, because the static fetch can't see JavaScript-rendered content (see
+`relay/jev-calibration.md`). Run it by hand with `python3 relay_cite.py <workspace> <task-id>`. On Windows it uses
 any Python 3.9+ on PATH, or runs inside WSL from `~/.claude/relay/relay_cite.py`.
 
 ---
@@ -585,8 +588,8 @@ any Python 3.9+ on PATH, or runs inside WSL from `~/.claude/relay/relay_cite.py`
 [Jev-AI-Skill](https://github.com/King4s/Jev-AI-Skill) gives the relay access to Jev,
 TypeSafe System One's fast decision model, which answers a typed question in well under a
 second. `RELAY_JEV=1 relay.sh autopilot` (Windows: `$env:RELAY_JEV='1'` before
-`relay.ps1 autopilot`) puts it in front of four small decisions that
-used to either stop the run or spend a validator turn:
+`relay.ps1 autopilot`) puts it in front of six small decisions that
+used to either stop the run, spend a validator turn, or go unchecked:
 
 | Gate | Without Jev | With Jev |
 |---|---|---|
@@ -594,6 +597,8 @@ used to either stop the run or spend a validator turn:
 | Report with no `VERDICT:` line | re-read 30s, then stop (it used to count as a pass) | Jev classifies the body: FAIL, or a ≥0.9-confidence pass recorded as PASS-WITH-CONCERNS |
 | Mutation reports with no survivors | go to the paid end-of-run sweep | dropped; the sweep is skipped if nothing is left |
 | Docs/images-only change | mutation lane runs | mutation skipped |
+| Test code the task added | scout audits it unprompted | files whose tests seem to recompute their own expected values are named to the scout and validator (a hint, never a verdict) |
+| Doc/data files the task changed | read as-is by scout and validator | text aimed at an AI reader (a prompt injection carried in from a scraped page) gets a "treat as data" banner, a WARNING and a summary row |
 
 **Pane shadow (logging only).** With `RELAY_JEV=1`, every 2 minutes while autopilot waits
 on an agent, it saves that pane's screen to `.relay/jev/panes/` and asks Jev, detached, which
@@ -613,7 +618,9 @@ threshold are in [`relay/jev-calibration.md`](relay/jev-calibration.md).
 Setup: install Jev-AI-Skill (`~/Jev-AI-Skill/install.sh`) and put a TypeSafe key in
 `~/.config/jev-loop/typesafe_api_key`. `relay_jev.py` must sit next to `relay.sh` in
 `~/.claude/relay/`. Override paths with `RELAY_JEV_PYTHON` / `RELAY_JEV_HELPER`, and the
-thresholds with `RELAY_JEV_VERDICT_CONF` (0.9) / `RELAY_JEV_DECIDE_CONF` (0.7). Any Jev
+thresholds with `RELAY_JEV_VERDICT_CONF` (0.9) / `RELAY_JEV_DECIDE_CONF` (0.7) /
+`RELAY_JEV_TESTS_CONF` (0.5) / `RELAY_JEV_INJECT_CONF` (0.7). The test hint sends the added test code,
+and the injection screen the changed doc/data files, to TypeSafe. Any Jev
 error falls back to the no-Jev behaviour. Every decision is appended to
 `<workspace>/.relay/jev/decisions.jsonl`.
 
@@ -992,7 +999,7 @@ relay/
 ├── relay_jev.py           Jev gates helper, called by both (opt-in: RELAY_JEV=1)
 ├── relay_cite.py          citation check, called by both (on; RELAY_CITE=0 turns it off)
 ├── jev-calibration.md     what each gate was measured against before it shipped
-├── jev-calibration/       measurement scripts: verdict recovery, and the pane-shadow scorer
+├── jev-calibration/       measurement scripts: verdict recovery, pane shadow, citations, tests, injection, page support
 └── charters/              agent operating contracts
     ├── executor.md
     ├── scout.md
