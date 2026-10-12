@@ -773,8 +773,8 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </p>
   <p style="margin-top:12px;">
     It is a <strong style="color:var(--text)">closed loop</strong>, not a handoff. The agent that writes the code does
-    not verify it, the agent that gathers the evidence does not grade it, and the agent that grades it never touches
-    the code. Every step lands a durable artifact on disk.
+    not verify it, the agents that gather the evidence (a scout that observes, a mutator that tries to break it) do not grade it,
+    and the agent that grades it never touches the code. Every step lands a durable artifact on disk.
   </p>
 
   <!-- Interactive relay preview -->
@@ -846,16 +846,17 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
       <div class="glass-card relay-node rn-blue" data-node="verify" onclick="toggleNode(this)">
         <span class="rn-expand">+</span>
-        <div class="rn-model">Gemini scout → Opus validator</div>
+        <div class="rn-model">Gemini scout + mutator → Sonnet validator</div>
         <div class="rn-stage">Evidence &amp; Verdict</div>
-        <div class="rn-desc">Observe first, judge second — two agents, never one</div>
+        <div class="rn-desc">Observe, break it on purpose, then judge — three agents, never one</div>
         <div class="rn-tags">
           <span class="rn-tag">scout: evidence only</span>
+          <span class="rn-tag">mutator: surviving mutants</span>
           <span class="rn-tag">validator: verdict</span>
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            The <strong style="color:var(--text)">scout</strong> re-runs every verification command itself, reads the assertion bodies of the executor's tests, and writes its own edge-case probes to <span class="mono">.relay/probe/</span> — recording exit codes, real output and the actual diff to <span class="mono">.relay/evidence/</span> as observations only, never a pass or fail. It runs on Gemini, so that depth costs nothing. The <strong style="color:var(--text)">validator</strong> then grades the task file requirement by requirement, weighing claim against evidence. Where the two disagree, the evidence wins. Splitting these roles is the point: the validator grades facts it did not gather, about code it did not write.
+            The <strong style="color:var(--text)">scout</strong> re-runs every verification command itself, reads the assertion bodies of the executor's tests, and writes its own edge-case probes to <span class="mono">.relay/probe/</span> — recording exit codes, real output and the actual diff to <span class="mono">.relay/evidence/</span> as observations only, never a pass or fail. In parallel, the <strong style="color:var(--text)">mutator</strong> breaks the code on purpose inside an isolated snapshot at <span class="mono">.relay/mutants/</span> — starting with "revert the change, keep the new tests: every one should go red" — and reports which mutants the tests failed to catch to <span class="mono">.relay/mutation/</span>. It never touches the live tree and is never on the critical path. Both run on Gemini, so that depth costs nothing. The <strong style="color:var(--text)">validator</strong> then grades the task file requirement by requirement, weighing claim against evidence. Where the two disagree, the evidence wins. Splitting these roles is the point: the validator grades facts it did not gather, about code it did not write.
           </div>
         </div>
       </div>
@@ -1812,9 +1813,9 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       scouting is made <em>deep</em> (re-run every command, read the assertion bodies, write edge-case probes) and
       then <em>compacted</em> before it reaches the validator: passing commands reduce to a one-line row, failures
       are pasted verbatim. Green output carries almost no information; red output carries all of it. Exploiting
-      that asymmetry is what buys deep verification without a large token bill — and what keeps Opus affordable in
-      the one seat that is pure judgment. Hitting rate limits? Drop the validator to
-      <span class="mono">sonnet</span> before changing anything else.
+      that asymmetry is what buys deep verification without a large token bill — and what keeps Claude affordable in
+      the one seat that is pure judgment. The validator defaults to <span class="mono">claude-sonnet-5-5</span> for the
+      same reason, and starts every grade from an empty context so no grade pays for the ones before it.
     </div>
   </div>
 
