@@ -735,7 +735,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </h1>
     <p class="hero-subtitle">
       A skills-first framework pairing Claude Code and Antigravity CLI in a closed loop.
-      Claude specs it. Gemini builds it. A scout gathers evidence, and Claude grades the result.
+      Claude specs it. Gemini builds it. A scout gathers evidence, a mutator tries to break it, and Claude grades the result — unattended, queue after queue.
     </p>
     <div class="hero-ctas">
       <a href="#install" class="btn-primary">Get Started →</a>
@@ -878,7 +878,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
       <div class="glass-card relay-node rn-multi" data-node="deploy" onclick="toggleNode(this)">
         <span class="rn-expand">+</span>
-        <div class="rn-model">Either</div>
+        <div class="rn-model">Claude Code</div>
         <div class="rn-stage">Deploy</div>
         <div class="rn-desc">Merge, PR, or ship</div>
         <div class="rn-tags">
@@ -886,7 +886,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            Either model can handle deployment. finishing-a-development-branch presents structured options: direct merge, pull request, or cleanup. Both Claude and Gemini support it.
+            Once the validator's verdicts are in, your Claude session finishes the branch. finishing-a-development-branch presents structured options: direct merge, pull request, or cleanup — and verifies tests before any of them.
           </div>
         </div>
       </div>
@@ -956,7 +956,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <div class="prereq-item-icon" style="background:rgba(255,214,10,.12);">🆓</div>
       <div>
         <strong>opencode CLI <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
-        <span>Free-model fallback for when <code>agy</code>'s quota runs out. Install: <code>curl -fsSL https://opencode.ai/install | bash</code> — no sign-in needed for its free models</span>
+        <span>Free-model fallback for when <code>agy</code>'s quota runs out. Install: <code>curl -fsSL https://opencode.ai/install | bash</code> (macOS/Linux/WSL — not Windows npm inside WSL) or <code>npm install -g opencode-ai</code> (Windows) — no sign-in needed for its free models</span>
       </div>
     </div>
     <div class="glass-card prereq-item">
@@ -1168,6 +1168,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
             <div class="tb-body">
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">ls "$env:USERPROFILE\.claude\anthropic-cookbook\README.md" &amp;&amp; echo "✓ cookbook"</span></span>
               <span class="tbb-div"><span class="c-ok">✓ cookbook</span></span>
+              <span class="tbb-div"><span class="c-comment"># Only if you installed the legacy maestro extension (step 5)</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">gemini extensions list | Select-String maestro</span></span>
               <span class="tbb-div"><span class="c-ok">✓ maestro (1.4.0)</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">ls "$env:USERPROFILE\.claude\hookify.long-run-drift.local.md" &amp;&amp; echo "✓ hook"</span></span>
@@ -1202,10 +1203,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Workspace .</span></span>
-              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+              <span class="tbb-div"><span class="c-ok">Relay up - all four agents answered.</span></span>
+              <span class="tbb-div"><span class="c-out">  executor  : agy / gemini-3.8-flash-medium  -&gt; %1</span></span>
+              <span class="tbb-div"><span class="c-out">  validator : claude sonnet -&gt; %2</span></span>
+              <span class="tbb-div"><span class="c-out">  scout     : agy / gemini-3.8-flash-medium  -&gt; %3</span></span>
+              <span class="tbb-div"><span class="c-out">  mutator   : agy / gemini-3.8-flash-medium  -&gt; %4</span></span>
               <span class="tbb-div"><span class="c-comment"># Confirm each agent actually loaded its charter before trusting it</span></span>
               <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" capture -Agent executor</span></span>
               <span class="tbb-div"><span class="c-out">READY</span></span>
+              <span class="tbb-div"><span class="c-comment"># Run every pending task unattended (or /relay-auto in Claude Code); RELAY_JEV is optional</span></span>
+              <span class="tbb-div"><span class="c-prompt">PS›</span> <span class="c-cmd">$env:RELAY_JEV='1'; powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" autopilot</span></span>
             </div>
           </div>
         </div>
@@ -1378,6 +1385,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
             <div class="tb-body">
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">ls ~/.claude/anthropic-cookbook/README.md &amp;&amp; echo "✓ cookbook"</span></span>
               <span class="tbb-div"><span class="c-ok">✓ cookbook</span></span>
+              <span class="tbb-div"><span class="c-comment"># Only if you installed the legacy maestro extension (step 6)</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">gemini extensions list | grep maestro</span></span>
               <span class="tbb-div"><span class="c-ok">✓ maestro (1.4.0)</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">ls ~/.claude/hookify.long-run-drift.local.md &amp;&amp; echo "✓ hook"</span></span>
@@ -1407,7 +1415,13 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">cp commands/*.md ~/.claude/commands/</span></span>
               <span class="tbb-div"><span class="c-comment"># Bring it up inside the project you want worked on</span></span>
               <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">~/.claude/relay/relay.sh up -w .</span></span>
-              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+              <span class="tbb-div"><span class="c-ok">Relay up - all four agents answered.</span></span>
+              <span class="tbb-div"><span class="c-out">  executor  : agy / gemini-3.8-flash-medium  -&gt; %1</span></span>
+              <span class="tbb-div"><span class="c-out">  validator : claude sonnet -&gt; %2</span></span>
+              <span class="tbb-div"><span class="c-out">  scout     : agy / gemini-3.8-flash-medium  -&gt; %3</span></span>
+              <span class="tbb-div"><span class="c-out">  mutator   : agy / gemini-3.8-flash-medium  -&gt; %4</span></span>
+              <span class="tbb-div"><span class="c-comment"># Run every pending task unattended (or /relay-auto in Claude Code); RELAY_JEV is optional</span></span>
+              <span class="tbb-div"><span class="c-prompt">%</span> <span class="c-cmd">RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot</span></span>
             </div>
           </div>
         </div>
@@ -1532,7 +1546,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/.claude/relay/relay.sh up -w .</span></span>
               <span class="tbb-div"><span class="c-out">[relay] executor bin : /home/you/.local/bin/agy</span></span>
               <span class="tbb-div"><span class="c-out">[relay] Waiting for agents to boot and clearing startup prompts...</span></span>
-              <span class="tbb-div"><span class="c-ok">✓ Relay up. executor → %1  validator → %2  scout → %3</span></span>
+              <span class="tbb-div"><span class="c-ok">Relay up - all four agents answered.</span></span>
+              <span class="tbb-div"><span class="c-out">  executor  : agy / gemini-3.8-flash-medium  -&gt; %1</span></span>
+              <span class="tbb-div"><span class="c-out">  validator : claude sonnet -&gt; %2</span></span>
+              <span class="tbb-div"><span class="c-out">  scout     : agy / gemini-3.8-flash-medium  -&gt; %3</span></span>
+              <span class="tbb-div"><span class="c-out">  mutator   : agy / gemini-3.8-flash-medium  -&gt; %4</span></span>
               <span class="tbb-div"><span class="c-comment"># Confirm each agent actually loaded its charter</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/.claude/relay/relay.sh capture -a executor -n 12</span></span>
               <span class="tbb-div"><span class="c-out">READY</span></span>
@@ -1554,16 +1572,19 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
             </div>
             <div class="tb-body">
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">R=~/.claude/relay/relay.sh</span></span>
-              <span class="tbb-div"><span class="c-comment"># 1. executor implements</span></span>
+              <span class="tbb-div"><span class="c-comment"># 1. executor implements; the scout's pre-brief writes probes from the spec alone, at the same time</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a executor -T .relay/tasks/001-slug.md</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a scout -T .relay/tasks/001-slug.md -p prebrief</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/results/001-slug.md -a executor --timeout 1200</span></span>
-              <span class="tbb-div"><span class="c-comment"># 2. scout re-runs verification independently — observations only</span></span>
+              <span class="tbb-div"><span class="c-comment"># 2. once .relay/probe/001-slug/PREBRIEF.md exists, the scout re-runs verification — observations only</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a scout -T .relay/tasks/001-slug.md</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/evidence/001-slug.md -a scout --timeout 900</span></span>
               <span class="tbb-div"><span class="c-comment"># 3. validator grades spec vs evidence</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R dispatch -a validator -T .relay/tasks/001-slug.md</span></span>
               <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">$R wait -f .relay/reports/001-slug.md -a validator --timeout 1200</span></span>
               <span class="tbb-div"><span class="c-ok">VALIDATOR PASS-WITH-CONCERNS .relay/reports/001-slug.md</span></span>
+              <span class="tbb-div"><span class="c-comment"># Or run the whole queue unattended, mutation lane included (or /relay-auto)</span></span>
+              <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">RELAY_JEV=1 $R autopilot</span></span>
             </div>
           </div>
         </div>
@@ -1592,7 +1613,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>brainstorming</h4><p>Collaborative design dialogue. Turns rough ideas into fully-formed specs before any code is written.</p><div class="sk-meta">triggers → new feature requests</div></div>
     <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>writing-plans</h4><p>Converts an approved spec into a step-by-step implementation plan with exact paths, test commands, and commits.</p><div class="sk-meta">triggers → after brainstorming approval</div></div>
     <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>subagent-driven-development</h4><p>Executes a plan with a fresh subagent per task. Two-stage review (spec compliance + code quality) after each task.</p><div class="sk-meta">best for → most implementation work</div></div>
-    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>executing-plans</h4><p>Executes a plan inline with review checkpoints. Fallback when subagent dispatch isn't available — e.g., Gemini build stage.</p><div class="sk-meta">best for → Gemini builds, sequential tasks</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>executing-plans</h4><p>Executes a plan inline with review checkpoints. Fallback when subagent dispatch isn't available.</p><div class="sk-meta">best for → sequential tasks</div></div>
     <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>dispatching-parallel-agents</h4><p>Launches multiple independent subagents simultaneously. Speeds up work with no shared state or sequential dependencies.</p><div class="sk-meta">best for → 2+ independent tasks</div></div>
     <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>test-driven-development</h4><p>Enforces red/green TDD. Write failing test → confirm it fails → write minimal code → confirm it passes → commit.</p><div class="sk-meta">triggers → any implementation task</div></div>
     <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>verification-before-completion</h4><p>Runs a verification checklist before claiming any task is done. Prevents saying "done" without confirming output.</p><div class="sk-meta">triggers → before completion claims</div></div>
@@ -1735,8 +1756,8 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <tr><td class="mono">/relay-task</td><td>Runs a full cycle: executor implements, scout gathers evidence, validator grades</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-status</td><td>Session health, pane state, and what is on the file bus</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-down</td><td>Tears the relay session down</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/maestro:orchestrate</td><td>Launches the maestro multi-agent orchestrator in Gemini CLI</td><td><span class="status-badge st-gemini">Gemini CLI</span></td></tr>
-      <tr><td class="mono">/maestro:help</td><td>Shows maestro commands and all 22 available specialist agents</td><td><span class="status-badge st-gemini">Gemini CLI</span></td></tr>
+      <tr><td class="mono">/maestro:orchestrate</td><td>Launches the maestro multi-agent orchestrator in Gemini CLI</td><td><span class="status-badge st-dep">Legacy · Gemini CLI</span></td></tr>
+      <tr><td class="mono">/maestro:help</td><td>Shows maestro commands and all 22 available specialist agents</td><td><span class="status-badge st-dep">Legacy · Gemini CLI</span></td></tr>
     </tbody>
   </table>
 </section>
@@ -1802,6 +1823,33 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       Do not collapse the two roles back into one; an agent that gathers its own evidence just grades its own
       summary of it. The executor and scout share a model — independence here comes from role separation, not
       model identity: separate process, separate charter, and no visibility into the executor's reasoning.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🔁</span>
+    <div>
+      <strong style="color:var(--text)">Autopilot runs the queue unattended.</strong>
+      <span class="mono">relay.sh autopilot</span> / <span class="mono">relay.ps1 autopilot</span> (or
+      <span class="mono">/relay-auto</span>) drives every pending task through execute → scout → validate, with the
+      mutation lane in parallel. When the validator FAILs a task it writes the follow-up, and autopilot runs it. It
+      restarts wedged panes on its own — a pane with no file writes for ten minutes is stalled, not slow — and stops
+      when the work stops converging: 3 consecutive FAILs, an executor <span class="mono">BLOCKED</span> question, a
+      report with no <span class="mono">VERDICT:</span> line, or its 8-hour / 24-cycle ceilings. Touch
+      <span class="mono">.relay/STOP</span> to halt it cleanly between phases; the next run resumes from the bus.
+    </div>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">📝</span>
+    <div>
+      <strong style="color:var(--text)">The pre-brief: probes are written before the code exists.</strong> The scout is
+      dispatched twice per task. The first dispatch goes out with the executor's and allows the task file only: it writes
+      its probes, and the requirement each expected value comes from, before there is an implementation to copy an answer
+      from. A probe that encodes the implementation cannot fail, and charter rules alone never stopped that. The second
+      dispatch is the evidence pass. <span class="mono">--no-prebrief</span> turns it off.
+      <span class="mono">--pipeline</span> (off by default) starts the executor on the next task while the validator
+      grades this one, but only when the two tasks' <span class="mono">Scope → In:</span> paths are provably disjoint.
     </div>
   </div>
 
@@ -1900,14 +1948,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </div>
 
   <div class="glass-card" style="padding:24px;margin:24px 0;">
-    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Handoff Rules</h3>
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Writing task files</h3>
     <table class="glass-table" style="margin-top:0;">
       <thead><tr><th>Rule</th><th>Reason</th></tr></thead>
       <tbody>
-        <tr><td><strong style="color:var(--text)">Mark parallelism explicitly</strong></td><td>Gemini's subagent scheduler routes to specialists — it needs clear task boundaries. Claude's <span class="mono">Task</span> tool spawns dynamically; Gemini cannot match this exactly.</td></tr>
-        <tr><td><strong style="color:var(--text)">Self-contained task descriptions</strong></td><td>Each plan task must be understandable with zero context from the planning conversation. Claude has that context; Gemini will not.</td></tr>
-        <tr><td><strong style="color:var(--text)">Reference outcomes, not tool names</strong></td><td>Gemini's tools differ from Claude's. Write "read the config file" not "use the Read tool".</td></tr>
-        <tr><td><strong style="color:var(--text)">Complex builds stay on Claude</strong></td><td>When a build requires dynamic subagent dispatch across many files, Claude's subagent-driven-development skill is more reliable than Gemini's specialist routing.</td></tr>
+        <tr><td><strong style="color:var(--text)">Self-contained</strong></td><td>Each task file must be understandable with zero context from the planning conversation. Claude has that context; the agy panes will not.</td></tr>
+        <tr><td><strong style="color:var(--text)">Requirements checkable by a stranger</strong></td><td>The validator grades against the numbered requirements, so a vague one produces a worthless verdict — and the scout's pre-brief returns it as an open question.</td></tr>
+        <tr><td><strong style="color:var(--text)">Real paths on the <span class="mono">Scope → In:</span> line</strong></td><td><span class="mono">--pipeline</span> reads it to decide whether the next task may start early. A vague scope costs the speedup, never the guarantee.</td></tr>
+        <tr><td><strong style="color:var(--text)">One-line verification commands that run as written</strong></td><td>The executor rewrites commands it cannot run and reports the result it expected. No <span class="mono">try</span>/<span class="mono">if</span>/<span class="mono">for</span> after a semicolon in <span class="mono">python -c</span>; better, let <span class="mono">pytest -q</span> be the command.</td></tr>
+        <tr><td><strong style="color:var(--text)">Objective no stronger than the requirements</strong></td><td>The validator grades the task file too, and will say so when the Objective promises more than the requirements deliver.</td></tr>
+        <tr><td><strong style="color:var(--text)">Reference outcomes, not tool names</strong></td><td>agy's tools differ from Claude's. Write "read the config file", not "use the Read tool".</td></tr>
       </tbody>
     </table>
   </div>
@@ -2065,7 +2115,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </a>
     <a class="glass-card resource-card" href="https://github.com/josstei/maestro-gemini" target="_blank">
       <h4>josstei/maestro-gemini</h4>
-      <p>Gemini CLI extension. 22 specialist subagent roles, parallel dispatch, MCP server. Bridges Gemini's routing to Claude-style orchestration.</p>
+      <p><strong>Legacy, optional.</strong> Gemini CLI extension with 22 specialist subagent roles. Only usable with a Code Assist Standard/Enterprise licence; the relay does not use it.</p>
       <div class="resource-repo">github.com/josstei/maestro-gemini</div>
     </a>
     <a class="glass-card resource-card" href="https://github.com/punkpeye/awesome-mcp-servers" target="_blank">
@@ -2082,7 +2132,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </a>
     <a class="glass-card resource-card" href="https://github.com/google-gemini/gemini-cli" target="_blank">
       <h4>google-gemini/gemini-cli</h4>
-      <p>Official Gemini CLI. v0.35.x with experimental subagents enabled by default. The build-stage tool in the relay.</p>
+      <p><strong>Legacy.</strong> The original build-stage tool. Google retired "Sign in with Google" for individual accounts on 2026-06-18; the relay's executor is now Antigravity CLI (agy).</p>
       <div class="resource-repo">github.com/google-gemini/gemini-cli</div>
     </a>
   </div>
@@ -2092,7 +2142,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
 <div class="footer">
   <div class="footer-brand">Medina Agentic Relay</div>
-  <div>Skills-first · Claude + Gemini relay · obra/superpowers + maestro-gemini</div>
+  <div>Skills-first · Claude + Antigravity relay · obra/superpowers · optional Jev gates</div>
   <div>Built with <a href="https://claude.ai/code">Claude Code</a></div>
 </div>
 
@@ -2203,15 +2253,16 @@ document.querySelectorAll('section[id]').forEach(s=>navObs.observe(s));
 (function(){
   const term = document.getElementById('heroTerm');
   const seq = [
-    {t:'cmd',  p:'$', s:'git clone https://github.com/anthropics/anthropic-cookbook.git ~/.claude/anthropic-cookbook'},
-    {t:'out',  s:"Cloning into '.claude/anthropic-cookbook'..."},
-    {t:'ok',   s:'✓ 401 files cloned — tool_use/ patterns/ multiagent/ ready'},
+    {t:'cmd',  p:'$', s:'~/.claude/relay/relay.sh up -w .'},
+    {t:'ok',   s:'Relay up - all four agents answered.'},
+    {t:'out',  s:'  executor  : agy / gemini-3.8-flash-medium'},
+    {t:'out',  s:'  validator : claude sonnet'},
+    {t:'out',  s:'  scout     : agy / gemini-3.8-flash-medium'},
+    {t:'out',  s:'  mutator   : agy / gemini-3.8-flash-medium'},
     {t:'gap'},
-    {t:'cmd',  p:'$', s:'gemini extensions install https://github.com/josstei/maestro-gemini --consent'},
-    {t:'ok',   s:"✓ Extension 'maestro' (1.4.0) installed · 22 specialist agents"},
-    {t:'gap'},
-    {t:'cmd',  p:'$', s:'gemini extensions list'},
-    {t:'out',  s:'✓ maestro (1.4.0)  enabled · MCP: maestro-server.js'},
+    {t:'cmd',  p:'$', s:'RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot'},
+    {t:'out',  s:'Jev gates ON'},
+    {t:'ok',   s:'✓ queue drained'},
     {t:'gap'},
     {t:'done', s:'🚀 Medina Agentic Relay — ready.'},
   ];
