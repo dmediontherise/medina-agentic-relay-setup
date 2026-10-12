@@ -66,3 +66,47 @@ cannot tell ghost text from typed text either. An `unsent-input` answer on a Cla
 may be this case, so check the saved screen against the live pane with `-e` before
 counting it as a real stuck dispatch. If it turns out to be common, the fix is to capture
 with `-e` and mark dim runs before the screen goes to Jev, not to retune the labels.
+
+## Citation check (code only, no Jev; on by default)
+
+Of 30 validator FAILs across seven workspaces, 7 were a cited source that does not say what
+it is cited for, the largest class after weak tests (~10) and plain bugs (~11). A check
+on reported numbers versus a re-run, the first idea, covered 2 and would have caught
+neither, so it was not built. `relay_cite.py` fetches each source cited in the files a
+task changed, and flags a dead link, a deep link that redirects away, a `quote` missing
+from the page, or a number in the claim the page does not state. Only citations the task
+added count (not already committed, not recorded by an earlier task's check). Robots
+blocks, JavaScript-rendered pages and hosts that answer made-up paths are listed as
+unverified, never flagged.
+
+`jev-calibration/eval_cite.py` replays every `.relay/mutants/<task>` snapshot in order
+(2026-10-11, live pages). Snapshots existed for two of the workspaces with citation
+defects (a research slide deck and a sports-model project):
+
+| Set | Result |
+|---|---|
+| Tasks with a citation defect | 5/5 flagged |
+| Other snapshotted tasks that added citations | 1/5 flagged |
+| A third workspace with no snapshots (a local-services research dataset): 70 real price quotes vs the same 70 rewritten in the synthesized form its validator caught | 0/70 vs 70/70 |
+
+The hits are the defects the validator wrote down, not near misses: five
+figures credited to two government landing pages that do not show them, a methodology
+link that redirects to an unrelated news section, a source host with no DNS record, and a
+named index credited to a company that does not publish it. One of the five passed with
+"Defects: None"; the follow-up task was written because hand-checking then found exactly
+what the check flags. The one other flag is figures cited to a data download page that
+does not display them; that is true, and the validator accepted it.
+
+Misses: an expired domain now serving unrelated content (it blocks robots, so it is
+unverified), and claims with no number or quote ("limited availability", "groups up to
+50"). A Jev question ("do these page excerpts support the claim?") is the obvious next
+gate for those, but none of them has a snapshot to calibrate against, so it was not
+wired in.
+
+Identifier digits (phone numbers, street numbers, ZIPs, occupation codes, opening hours)
+are skipped. Before that rule the already-fixed dataset drew 52 false findings; after it,
+1 (a rating that has since changed).
+
+Effect on a run: findings send the task back to the executor once (`RELAY_CITE_BOUNCE=0`
+keeps it to a note), and the scout and validator get a note pointing at the table. A
+bounce counts as a cycle toward `--max-cycles`, like a Jev-answered BLOCKED.

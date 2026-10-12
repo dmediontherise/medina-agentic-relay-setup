@@ -480,6 +480,12 @@ Medina Agentic Relay - tmux control plane
   validator context: every dispatch to the validator sends /clear first, so each
   grade starts from the bus alone instead of every earlier grade of the run. Turn
   it off with RELAY_VALIDATOR_FRESH=0.
+
+  citation check: after each executor result, relay_cite.py fetches the sources the
+  task newly cites and flags dead/redirected links, quotes not on the page and numbers
+  the page does not state. Findings send the task back to the executor once, then go
+  to the scout and validator as a note. RELAY_CITE=0 turns it off; RELAY_CITE_BOUNCE=0
+  keeps the note without the bounce.
 EOF
 }
 
@@ -1418,6 +1424,19 @@ JEV_HELPER="${RELAY_JEV_HELPER:-$RELAY_HOME/relay_jev.py}"
 jev_on() { [ "${RELAY_JEV:-0}" = "1" ] && [ -x "$JEV_PY" ] && [ -f "$JEV_HELPER" ]; }
 jev_gate() { timeout 90 "$JEV_PY" -I "$JEV_HELPER" "$@" 2>/dev/null | head -1; }
 
+# --- Citation check (on by default; RELAY_CITE=0 turns it off) -----------------
+# 7 of 30 validator FAILs on record were a cited source that does not say what it is
+# cited for: a quote not on the page, figures credited to a landing page, a link that
+# redirects or no longer resolves. relay_cite.py checks those in code, with no Jev and
+# no model, right after the executor's result lands; replayed against the old tasks it
+# flagged every one of them (relay/jev-calibration.md). It only looks at citations the
+# task added, and only reports what a fetch proves - a page that blocks robots or renders
+# in JavaScript is listed as unverified, never as a finding.
+CITE_PY="${RELAY_CITE_PYTHON:-python3}"
+CITE_HELPER="${RELAY_CITE_HELPER:-$RELAY_HOME/relay_cite.py}"
+cite_on() { [ "${RELAY_CITE:-1}" != "0" ] && [ -f "$CITE_HELPER" ] && command -v "$CITE_PY" >/dev/null 2>&1; }
+cite_gate() { timeout 240 "$CITE_PY" -I "$CITE_HELPER" "$WORKSPACE" "$1" 2>/dev/null | head -1; }
+
 # Tasks with no report yet, in id order. Never dispatch the unfilled seed
 # template: it states no requirements, can never earn a report, and would be
 # picked first on every pass forever.
@@ -2247,6 +2266,30 @@ cmd_autopilot() {
       stop_reason="$base : executor is BLOCKED and needs a human answer - see $result_p"; break
     fi
 
+    # Citation check, before anything else spends time on this result. Findings send the
+    # task back to the executor ONCE, with the table appended to the task file; the
+    # executor fixes each row or says in its result why it stands. Whatever the second
+    # pass leaves is handed to the scout and the validator as a note - never a second
+    # bounce, so a check that is wrong costs one free executor turn, not the task.
+    local cite_note="" cite_md="$WORKSPACE/.relay/citations/$base.md"
+    if cite_on && [ ! -f "$evidence_p" ]; then
+      local cr; cr="$(cite_gate "$base")"
+      run_log "$base : citation check: ${cr:-no answer}"
+      case "$cr" in
+        FLAGGED*)
+          local cn; cn="$(printf '%s' "$cr" | awk '{print $2 " of " $3}')"
+          if [ "${RELAY_CITE_BOUNCE:-1}" != "0" ] && ! grep -q '^## Citation check (relay)' "$task" 2>/dev/null &&
+             mv -f "$result_p" "${result_p%.md}.cite1.md" 2>/dev/null; then
+            printf '\n\n## Citation check (relay)\nThe relay fetched every source your result cites and flagged %s citations: a link that is dead or redirects away, a quote that is not on the page, or a number the page does not state. The table is in `.relay/citations/%s.md`. Your first result was moved to `.relay/results/%s.cite1.md`.\n\nFor each row, either fix the citation (the page that actually publishes the figure, the verbatim quote), or keep it and say why under a `## Citation check` section in your new result - a page that renders the figure in JavaScript, a figure computed from a linked data file. Do not delete a figure or soften a claim only to make the check pass. Then write the result again to the same path.\n' "$cn" "$base" "$base" >> "$task"
+            run_log "$base : citation check flagged $cn - sending it back to the executor once (see $cite_md)"
+            summary="$summary
+| $base | citation check -> executor | $cn flagged |"
+            continue
+          fi
+          cite_note="The relay's citation check flagged $cn citations in this task (\`.relay/citations/$base.md\`). It is a machine check: open each flagged page yourself before you rely on a row, and read the executor's ## Citation check section, if any, for why a row was kept." ;;
+      esac
+    fi
+
     # The mutation lane starts here and is never waited on.
     # Docs and images only: no test can pin a sentence, so a mutation pass would cost a
     # pane, a snapshot and a slot in the end-of-run drain for a report with nothing in
@@ -2289,7 +2332,7 @@ cmd_autopilot() {
       if [ "$prebrief_on" -eq 1 ] && [ ! -f "$prebrief_p" ]; then
         run_log "no pre-brief for $base - the scout will probe post-hoc"
       fi
-      r="$(invoke_phase scout "$task" "$evidence_p" 1200 "mutator")"
+      r="$(invoke_phase scout "$task" "$evidence_p" 1200 "mutator" "$cite_note")"
       load_state
       [ "$r" = "stopped" ] && { stop_reason="stopped by .relay/STOP"; break; }
       if [ "$r" != "ok" ]; then
@@ -2340,6 +2383,7 @@ cmd_autopilot() {
     fi
 
     [ -n "$pipe_note" ] && note="$note $pipe_note"
+    [ -n "$cite_note" ] && note="$note $cite_note"
     # Idle-pane keepalive must skip anything the prefetch put to work. keepalive
     # restarts a pane that does not answer, and an executor mid-task between turns
     # can miss a probe - which would kill the prefetch to prove it was alive.
