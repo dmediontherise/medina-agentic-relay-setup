@@ -2459,6 +2459,10 @@ if ($Command -eq 'autopilot') {
     $stopReason  = 'queue drained'
     $summary     = @()
     $sweepDone   = $false
+    # Tasks handed to the mutator in this run. The drain waits on their reports, not on
+    # how the pane looks: agy's busy hint drops out between steps, so one idle-looking
+    # capture used to end the drain while a pass was still running (seen 2026-10-11, 042).
+    $mutPending  = @()
 
     Write-RunLog $log "autopilot start - budget ${BudgetMin}m, max ${MaxCycles} cycles, mutation=$mutationOn"
     $jevRun = Get-JevRunner
@@ -2488,14 +2492,28 @@ if ($Command -eq 'autopilot') {
             foreach ($m in @(Get-ChildItem (Join-Path $ws '.relay\mutation') -File -Filter *.md -EA 0)) {
                 if (-not $seen.ContainsKey($m.BaseName)) { $outstanding += $m }
             }
-            $inFlight = Test-PaneBusy (Get-PaneTarget $s 'mutator')
+            $mutWait  = @($mutPending | Where-Object { -not (Test-Path (Join-Path $ws ".relay\mutation\$_.md")) })
+            $inFlight = ($mutWait.Count -gt 0) -or (Test-PaneBusy (Get-PaneTarget $s 'mutator'))
             if ($outstanding.Count -eq 0 -and -not $inFlight) { break }
 
             if ($inFlight) {
-                Write-RunLog $log "queue drained; mutator still working - draining for up to ${MutationDrainMin}m"
+                $waitNote = if ($mutWait.Count) { " (no report yet for: $($mutWait -join ' '))" } else { '' }
+                Write-RunLog $log "queue drained; mutator still working$waitNote - draining for up to ${MutationDrainMin}m"
                 $drainEnd = (Get-Date).AddMinutes($MutationDrainMin)
-                while ((Get-Date) -lt $drainEnd -and (Test-PaneBusy (Get-PaneTarget $s 'mutator'))) {
+                $idle = 0
+                while ((Get-Date) -lt $drainEnd) {
                     if (Test-StopRequested $s) { break }
+                    $mutWait = @($mutPending | Where-Object { -not (Test-Path (Join-Path $ws ".relay\mutation\$_.md")) })
+                    if (Test-PaneBusy (Get-PaneTarget $s 'mutator')) { $idle = 0 } else { $idle++ }
+                    # Done: every report this run asked for is on disk and the pane has looked
+                    # idle on two checks running, so a report still being written is not cut off.
+                    if ($mutWait.Count -eq 0 -and $idle -ge 2) { break }
+                    # A report is missing but the pane has looked idle for ~4 minutes straight:
+                    # the pass died or finished without writing. Waiting out the full drain buys nothing.
+                    if ($mutWait.Count -gt 0 -and $idle -ge 16) {
+                        Write-RunLog $log "mutator idle ~4m with no report for: $($mutWait -join ' ') - ending the drain"
+                        break
+                    }
                     Start-Sleep -Seconds 15
                 }
                 $outstanding = @()
@@ -2707,7 +2725,9 @@ if ($Command -eq 'autopilot') {
                 Write-RunLog $log "skipping mutation for $base - $($mg.Substring(4).Trim())"
             }
             else {
-                Start-MutationPass $s $taskFile.FullName $log | Out-Null
+                # Last value only: anything a helper leaks to the pipeline must not read as success.
+                $started = Start-MutationPass $s $taskFile.FullName $log
+                if (@($started)[-1] -eq $true) { $mutPending += $base }
             }
         }
 

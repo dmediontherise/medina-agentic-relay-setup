@@ -1970,6 +1970,10 @@ cmd_autopilot() {
   touch "$seen_file"
 
   local start_ts deadline cycles=0 consec=0 stop_reason="queue drained" sweep_done=0
+  # Tasks handed to the mutator in this run. The drain waits on their reports, not on
+  # how the pane looks: agy's busy hint drops out between steps, so one idle-looking
+  # capture used to end the drain while a pass was still running (seen 2026-10-11, 042).
+  local mut_pending=""
   local summary=""
   start_ts="$(date +%s)"
   deadline=$(( start_ts + budget_min * 60 ))
@@ -2002,11 +2006,24 @@ cmd_autopilot() {
         grep -qxF "$(basename "$m" .md)" "$seen_file" && continue
         outstanding="$outstanding $m"
       done
-      if pane_busy "$(pane_for mutator)"; then
-        run_log "queue drained; mutator still working - draining for up to ${drain_min}m"
-        local dend=$(( $(date +%s) + drain_min * 60 ))
-        while [ "$(date +%s)" -lt "$dend" ] && pane_busy "$(pane_for mutator)"; do
+      local mut_wait="" b
+      for b in $mut_pending; do [ -f "$WORKSPACE/.relay/mutation/$b.md" ] || mut_wait="$mut_wait $b"; done
+      if [ -n "$mut_wait" ] || pane_busy "$(pane_for mutator)"; then
+        run_log "queue drained; mutator still working${mut_wait:+ (no report yet for:$mut_wait)} - draining for up to ${drain_min}m"
+        local dend=$(( $(date +%s) + drain_min * 60 )) idle=0
+        while [ "$(date +%s)" -lt "$dend" ]; do
           stop_requested && break
+          mut_wait=""
+          for b in $mut_pending; do [ -f "$WORKSPACE/.relay/mutation/$b.md" ] || mut_wait="$mut_wait $b"; done
+          if pane_busy "$(pane_for mutator)"; then idle=0; else idle=$((idle + 1)); fi
+          # Done: every report this run asked for is on disk and the pane has looked
+          # idle on two checks running, so a report still being written is not cut off.
+          [ -z "$mut_wait" ] && [ "$idle" -ge 2 ] && break
+          # A report is missing but the pane has looked idle for ~4 minutes straight:
+          # the pass died or finished without writing. Waiting out the full drain buys nothing.
+          if [ -n "$mut_wait" ] && [ "$idle" -ge 16 ]; then
+            run_log "mutator idle ~4m with no report for:$mut_wait - ending the drain"; break
+          fi
           sleep 15
         done
         outstanding=""
@@ -2231,7 +2248,8 @@ cmd_autopilot() {
           run_log "snapshot for $base failed - skipping mutation for this task"
         else
           run_log "snapshot for $base ready ($meth) - mutation pass starts in the background"
-          do_dispatch mutator "$task" >/dev/null || run_log "mutator refused dispatch"
+          if do_dispatch mutator "$task" >/dev/null; then mut_pending="$mut_pending $base"
+          else run_log "mutator refused dispatch"; fi
         fi
       fi
     fi
