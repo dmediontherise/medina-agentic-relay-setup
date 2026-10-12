@@ -541,6 +541,19 @@ limits. Resets in 2h19m3s.
 
 ---
 
+## The validator starts every grade with an empty context
+
+The agy panes are recycled every few hours, but the validator never is, so before this
+one Claude session graded every task of a run: each grade paid for every grade before it,
+and task N-1's details stayed in reach while it read task N. Every dispatch to the
+validator now sends `/clear` first (skipped if the pane is busy). Nothing it needs is
+lost: house-style is in the appended system prompt, which survives `/clear`, the dispatch
+line names the charter to re-read, and everything about the task is on the bus. Both
+were checked against a live Claude Code 2.1.296 pane. Turn it off with
+`RELAY_VALIDATOR_FRESH=0`.
+
+---
+
 ## Jev gates (opt-in, bash and PowerShell)
 
 [Jev-AI-Skill](https://github.com/King4s/Jev-AI-Skill) gives the relay access to Jev,
