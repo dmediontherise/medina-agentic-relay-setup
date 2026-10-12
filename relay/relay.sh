@@ -54,6 +54,22 @@ load_state() {
   . "$STATE_FILE"
 }
 
+# Re-read the state file if there is one, without failing when there is not.
+#
+# A long-running autopilot loads the state once and keeps it in shell variables, but
+# `relay.sh restart -a <name> --provider ...` run by hand from another shell rewrites
+# the file underneath it. Without this, autopilot's next restart_agents - a keepalive
+# miss, a preemptive recycle, a fault restart - saved its stale PROVIDER_* and pane ids
+# back over the manual switch, and health then reported the hand-switched pane as
+# CRASHED because it looked for the old provider's binary in the new pane. Disk is the
+# source of truth: every writer (restart_agents, up) saves immediately after changing
+# anything, so nothing in memory is newer than the file.
+refresh_state() {
+  [ -f "$STATE_FILE" ] || return 0
+  # shellcheck disable=SC1090
+  . "$STATE_FILE"
+}
+
 save_state() {
   cat > "$STATE_FILE" <<EOF
 SESSION="$SESSION"
@@ -304,6 +320,7 @@ agent_process_alive() {
 # or nothing when the agent looks usable.
 agent_trouble() {
   local agent="$1" target f
+  refresh_state   # pane id and provider may have been changed by a manual restart
   target="$(pane_for "$agent")"
   if [ -z "$target" ]; then
     printf "no pane for '%s' - this relay was started before that agent existed" "$agent"; return 0
@@ -1047,6 +1064,7 @@ restart_agents() {
     fail "restart_agents: provider_override requires a single agent, got '$names'"
   fi
   case "$provider_override" in ''|agy|opencode) ;; *) fail "restart_agents: provider must be 'agy' or 'opencode', got '$provider_override'" ;; esac
+  refresh_state   # pick up a manual --provider switch made from another shell - see refresh_state
 
   for n in $names; do
     local upper; upper="$(printf '%s' "$n" | tr '[:lower:]' '[:upper:]')"
@@ -1553,6 +1571,7 @@ get_exec_status() {
 # Neither touches the validator: it is the one pane where a probe costs money.
 keepalive() {
   local n="$1" t
+  refresh_state
   [ "$n" = "validator" ] && return 0
   t="$(pane_for "$n")"; [ -n "$t" ] || return 0
   pane_busy "$t" && return 0
@@ -1631,6 +1650,7 @@ oc_fallback_eligible() {
 
 assert_agent_ready() {
   local n="$1" trouble left provider_arg=""
+  refresh_state
   trouble="$(agent_trouble "$n")"
   [ -z "$trouble" ] && return 0
   left="$(budget_left "$n")"
