@@ -2049,8 +2049,53 @@ function Get-JevRunner {
 function Invoke-JevGate([string]$sub, [string[]]$gateArgs) {
     $run = Get-JevRunner
     if (-not $run) { return '' }
-    $all = @($run.pre) + @($sub)
-    foreach ($a in $gateArgs) { $all += $(if ($run.wsl) { ConvertTo-WslPath $a } else { $a }) }
+    return (Invoke-HelperRunner $run (@($sub) + $gateArgs) 90000)
+}
+
+# Citation check - same as relay.sh's cite_on/cite_gate (see the comment there): code
+# only, no Jev, on unless RELAY_CITE=0. relay_cite.py is stdlib Python, so any Windows
+# python 3.9+ runs it (RELAY_CITE_PYTHON, else `python` on PATH - never the WindowsApps
+# store stub); without one it runs inside WSL as ~/.claude/relay/relay_cite.py.
+$script:CiteRunner = $null
+$script:CiteRunnerResolved = $false
+
+function Get-CiteRunner {
+    if ($script:CiteRunnerResolved) { return $script:CiteRunner }
+    $script:CiteRunnerResolved = $true
+    if ($env:RELAY_CITE -eq '0') { return $null }
+    $helper = if ($env:RELAY_CITE_HELPER) { $env:RELAY_CITE_HELPER } else { Join-Path $RelayHome 'relay_cite.py' }
+    $py = $env:RELAY_CITE_PYTHON
+    if (-not $py) {
+        $c = Get-Command python -All -EA 0 | Where-Object { $_.Source -notmatch '\\WindowsApps\\' } | Select-Object -First 1
+        if ($c) { $py = $c.Source }
+    }
+    if ($py -and (Test-Path $py) -and (Test-Path $helper)) {
+        $script:CiteRunner = @{ mode = 'native'; exe = $py; pre = @('-I', '-X', 'utf8', $helper); wsl = $false }
+        return $script:CiteRunner
+    }
+    $wsl = Get-Command wsl.exe -EA 0
+    if ($wsl -and -not $env:RELAY_JEV_NO_WSL) {
+        $wslHome = "$(& $wsl.Source -e sh -c 'printf %s "$HOME"' 2>$null)".Trim()
+        if ($wslHome) {
+            $wh = "$wslHome/.claude/relay/relay_cite.py"
+            & $wsl.Source -e test -f $wh 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                $script:CiteRunner = @{ mode = 'wsl'; exe = $wsl.Source; pre = @('-e', 'python3', '-I', '-X', 'utf8', $wh); wsl = $true }
+            }
+        }
+    }
+    return $script:CiteRunner
+}
+
+function Invoke-CiteGate([string]$ws, [string]$taskBase) {
+    $run = Get-CiteRunner
+    if (-not $run) { return '' }
+    return (Invoke-HelperRunner $run @($ws, $taskBase) 240000)
+}
+
+function Invoke-HelperRunner($run, [string[]]$helperArgs, [int]$timeoutMs) {
+    $all = @($run.pre)
+    foreach ($a in $helperArgs) { $all += $(if ($run.wsl) { ConvertTo-WslPath $a } else { $a }) }
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = $run.exe
@@ -2063,7 +2108,7 @@ function Invoke-JevGate([string]$sub, [string[]]$gateArgs) {
         $p = [System.Diagnostics.Process]::Start($psi)
         $outTask = $p.StandardOutput.ReadToEndAsync()
         $null = $p.StandardError.ReadToEndAsync()
-        if (-not $p.WaitForExit(90000)) { try { $p.Kill() } catch { }; return '' }
+        if (-not $p.WaitForExit($timeoutMs)) { try { $p.Kill() } catch { }; return '' }
         $first = @(($outTask.Result -replace "`r", '') -split "`n" | Where-Object { $_.Trim() })
         if ($first.Count -eq 0) { return '' }
         return $first[0].Trim()
@@ -2729,6 +2774,32 @@ if ($Command -eq 'autopilot') {
             break
         }
 
+        # Citation check - one bounce back to the executor, then a note for the scout and
+        # the validator. Same rules as relay.sh; see the comment on its block.
+        $citeNote = ''
+        if (-not (Test-Path $evidencePath)) {
+            $cr = Invoke-CiteGate $ws $base
+            if ($cr) { Write-RunLog $log "$base : citation check: $cr" }
+            if ($cr -like 'FLAGGED*') {
+                $cp = @($cr -split '\s+')
+                $cn = "$($cp[1]) of $($cp[2])"
+                $taskText = Get-Content -Raw -LiteralPath $taskFile.FullName -EA 0
+                $bounced = $false
+                if ($env:RELAY_CITE_BOUNCE -ne '0' -and $taskText -notmatch '(?m)^## Citation check \(relay\)') {
+                    $aside = $resultPath -replace '\.md$', '.cite1.md'
+                    try { Move-Item -LiteralPath $resultPath -Destination $aside -Force -EA Stop; $bounced = $true } catch { }
+                }
+                if ($bounced) {
+                    $add = "`n`n## Citation check (relay)`nThe relay fetched every source your result cites and flagged $cn citations: a link that is dead or redirects away, a quote that is not on the page, or a number the page does not state. The table is in ``.relay/citations/$base.md``. Your first result was moved to ``.relay/results/$base.cite1.md``.`n`nFor each row, either fix the citation (the page that actually publishes the figure, the verbatim quote), or keep it and say why under a ``## Citation check`` section in your new result - a page that renders the figure in JavaScript, a figure computed from a linked data file. Do not delete a figure or soften a claim only to make the check pass. Then write the result again to the same path.`n"
+                    [System.IO.File]::AppendAllText($taskFile.FullName, $add, (New-Object System.Text.UTF8Encoding $false))
+                    Write-RunLog $log "$base : citation check flagged $cn - sending it back to the executor once (see .relay\citations\$base.md)"
+                    $summary += "| $base | citation check -> executor | $cn flagged |"
+                    continue
+                }
+                $citeNote = "The relay's citation check flagged $cn citations in this task (``.relay/citations/$base.md``). It is a machine check: open each flagged page yourself before you rely on a row, and read the executor's ## Citation check section, if any, for why a row was kept."
+            }
+        }
+
         # 2. mutation lane starts here and is never waited on. Docs/images-only changes
         #    skip it with Jev on: no test can pin a sentence. Markup and config are NOT
         #    skipped - html-only tasks produced real survivors.
@@ -2766,7 +2837,7 @@ if ($Command -eq 'autopilot') {
             if ($prebriefOn -and -not (Test-Path $prebriefPath)) {
                 Write-RunLog $log "no pre-brief for $base - the scout will probe post-hoc"
             }
-            $r = Invoke-Phase $s 'scout' $taskFile.FullName $evidencePath 1200 $log @('mutator')
+            $r = Invoke-Phase $s 'scout' $taskFile.FullName $evidencePath 1200 $log @('mutator') $citeNote
             if ($r -eq 'stopped') { $stopReason = 'stopped by .relay/STOP'; break }
             if ($r -ne 'ok') {
                 Write-RunLog $log "NO SCOUT EVIDENCE for $base ($r) - validating degraded"
@@ -2825,6 +2896,7 @@ if ($Command -eq 'autopilot') {
         }
 
         if ($pipeNote) { $note = "$note $pipeNote" }
+        if ($citeNote) { $note = "$note $citeNote" }
         # Idle-pane keepalive must skip anything the prefetch put to work. Keepalive
         # restarts a pane that does not answer, and an executor mid-task between turns
         # can miss a probe - which would kill the prefetch to prove it was alive.

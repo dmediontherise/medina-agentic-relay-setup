@@ -82,6 +82,23 @@ If the open question is not a choice between readings (missing credentials, a br
 environment, something only the owner can grant), leave `## Options` out - that one
 genuinely needs a human.
 
+### When the relay's citation check sends a task back
+
+After your result lands, the relay fetches every source it cites. If a link is dead or
+redirects away, a `quote` is not on the page, or a number you credit to a page is not on
+it, the task comes back to you once with a `## Citation check (relay)` section and a
+table in `.relay/citations/<task-id>.md`. Fix each row (cite the page that actually
+publishes the figure; copy the quote verbatim), or keep it and add to your new result:
+
+```markdown
+## Citation check
+- L3: kept - the page renders the table in JavaScript; the figure is in its second row
+- L5: fixed - now cites the report page, not the site's homepage
+```
+
+Never delete a figure or soften a claim just to clear a row. The validator reads both
+the table and this section.
+
 ## Messages from the relay control plane
 
 Almost all of your input is files. The exception is that the relay drives this pane by

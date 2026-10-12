@@ -259,6 +259,7 @@ cd medina-agentic-relay-setup
 New-Item -ItemType Directory -Force "$env:USERPROFILE\.claude\relay" | Out-Null
 Copy-Item relay\relay.ps1 "$env:USERPROFILE\.claude\relay\" -Force
 Copy-Item relay\relay_jev.py "$env:USERPROFILE\.claude\relay\" -Force   # Jev gates; harmless without Jev
+Copy-Item relay\relay_cite.py "$env:USERPROFILE\.claude\relay\" -Force  # citation check; needs Python 3.9+ (or WSL)
 Copy-Item relay\charters  "$env:USERPROFILE\.claude\relay\" -Recurse -Force
 Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 ```
@@ -277,7 +278,7 @@ Copy-Item commands\*.md "$env:USERPROFILE\.claude\commands\" -Force
 git clone https://github.com/dmediontherise/medina-agentic-relay-setup.git
 cd medina-agentic-relay-setup
 mkdir -p ~/.claude/relay ~/.claude/commands
-cp relay/relay.sh relay/relay_jev.py ~/.claude/relay/   # relay_jev.py: Jev gates; harmless without Jev
+cp relay/relay.sh relay/relay_jev.py relay/relay_cite.py ~/.claude/relay/   # Jev gates (harmless without Jev), citation check
 cp -r relay/charters ~/.claude/relay/
 cp commands/*.md ~/.claude/commands/
 chmod +x ~/.claude/relay/relay.sh
@@ -551,6 +552,31 @@ lost: house-style is in the appended system prompt, which survives `/clear`, the
 line names the charter to re-read, and everything about the task is on the bus. Both
 were checked against a live Claude Code 2.1.296 pane. Turn it off with
 `RELAY_VALIDATOR_FRESH=0`.
+
+---
+
+## Citation check: sources that do not say what they are cited for
+
+7 of the 30 validator FAILs on record were a citation problem, the most of any single
+kind a machine can check. The quotes were made up, a landing page was credited with
+figures it does not show, or a link redirected to another site or no longer resolved.
+After each executor result, autopilot runs `relay_cite.py`. It is plain code with no Jev
+and no model. It fetches every source cited in the files the task changed, and only for
+citations the task added. It flags a dead link, a deep link that redirects away, a
+`quote` that is not on the page, or a number in the claim that the page does not state.
+Pages that block robots or render in JavaScript are listed as not machine-checkable,
+never flagged.
+
+On findings, the task goes back to the executor **once**. A `## Citation check (relay)`
+section is added to the task, the table is in `.relay/citations/<task>.md`, and the first
+result is moved to `<task>.cite1.md`. The executor fixes each row or says in its result
+why it stands. Whatever is left after that reaches the scout and the validator as a note.
+Replayed against old snapshots, the check flagged all 5 tasks that had a citation defect
+and 1 of 5 that did not; the numbers are in `relay/jev-calibration.md`.
+
+`RELAY_CITE=0` turns it off. `RELAY_CITE_BOUNCE=0` keeps the note but never sends a task
+back. Run it by hand with `python3 relay_cite.py <workspace> <task-id>`. On Windows it uses
+any Python 3.9+ on PATH, or runs inside WSL from `~/.claude/relay/relay_cite.py`.
 
 ---
 
@@ -964,6 +990,7 @@ relay/
 ├── relay.ps1              Windows / psmux control plane
 ├── relay.sh               macOS / Linux / tmux control plane
 ├── relay_jev.py           Jev gates helper, called by both (opt-in: RELAY_JEV=1)
+├── relay_cite.py          citation check, called by both (on; RELAY_CITE=0 turns it off)
 ├── jev-calibration.md     what each gate was measured against before it shipped
 ├── jev-calibration/       measurement scripts: verdict recovery, and the pane-shadow scorer
 └── charters/              agent operating contracts
