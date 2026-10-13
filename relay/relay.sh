@@ -228,11 +228,33 @@ BUSY_PAT='esc to cancel|esc to interrupt|ctrl\+c to (stop|cancel)|Running\.\.\.|
 # pane seconds later. 0.6s was not enough for agy to repaint.
 RELAY_REPAINT_SETTLE="${RELAY_REPAINT_SETTLE:-2.5}"
 
+# Never press Enter on a trust prompt blind. Claude Code 2.1.296 opens its folder-trust
+# menu with the cursor on "No, exit" (Yes is second), so a bare Enter quits the
+# validator on every folder it has not seen before - observed 2026-10-12 on a fresh
+# clone. The menu also wraps, so a fixed number of Downs is no safer. Instead read
+# which line the cursor is on and step Down until it is the accepting option. If no
+# cursor line is recognisable (an older or different layout), fall back to Enter,
+# which is what every earlier version wanted.
+accept_trust_prompt() {
+  local target="$1" i sel
+  for i in 1 2 3 4; do
+    sel="$(pane_text "$target" | grep -E '^[[:space:]]*(❯|›|>)[[:space:]]' | tail -n 1 || true)"
+    if [ -z "$sel" ] || printf '%s' "$sel" | grep -qiE 'yes|trust'; then
+      tmux send-keys -t "$target" Enter; return 0
+    fi
+    tmux send-keys -t "$target" Down; sleep 0.5
+  done
+  return 1
+}
+
 clear_blocking_prompts() {
   local target="$1" txt
   txt="$(pane_text "$target")"
   if pane_match "$txt" 'trust (the contents of this|this folder)'; then
-    tmux send-keys -t "$target" Enter; sleep "$RELAY_REPAINT_SETTLE"; printf 'folder-trust prompt'; return 0
+    if accept_trust_prompt "$target"; then
+      sleep "$RELAY_REPAINT_SETTLE"; printf 'folder-trust prompt'
+    fi
+    return 0
   fi
   # agy periodically asks for CLI feedback; it blocks the input line exactly like
   # the trust gate does.
