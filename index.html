@@ -1963,10 +1963,9 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <strong style="color:var(--text)">The most common failure is a stuck pane, not a slow model.</strong>
       A pane sitting on a folder-trust gate, an auth screen, or an approval dialog looks exactly like one that is
       thinking. Always run <span class="mono">capture -a &lt;agent&gt;</span> before concluding an agent is working.
-      Claude Code 2.1.296 opens its folder-trust menu with the cursor on <em>No, exit</em>, so since 2026-10-12
-      <span class="mono">relay.sh</span> presses Down until <em>Yes</em> is selected instead of pressing Enter straight away.
-      <strong style="color:var(--text)"><span class="mono">relay.ps1</span> has not been ported yet</strong>: on Windows,
-      answer the validator's trust prompt yourself, or trust the folder once in a normal <span class="mono">claude</span> session first.
+      Claude Code 2.1.296 opens its folder-trust menu with the cursor on <em>No, exit</em>, so both control planes
+      press Down until <em>Yes</em> is selected instead of pressing Enter straight away
+      (<span class="mono">relay.sh</span> since 2026-10-12, <span class="mono">relay.ps1</span> since 2026-10-25).
       Reviewers run with permissions bypassed for exactly this reason — <span class="mono">acceptEdits</span> gates
       every new command shape behind a prompt, which turns an unattended verification agent into a permanent hang.
       What keeps the scout and validator from editing the code they judge is their <strong style="color:var(--text)">charters,
@@ -2185,6 +2184,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <tr><td class="mono">relay/jev-calibration/</td><td><span class="mono">eval_verdict</span>, <span class="mono">eval_pane_shadow</span>, <span class="mono">eval_cite</span>, <span class="mono">eval_tests</span>, <span class="mono">eval_inject</span>, <span class="mono">eval_support</span> — re-run them when the Jev model changes</td></tr>
         <tr><td class="mono">relay/charters/</td><td><span class="mono">executor.md</span>, <span class="mono">scout.md</span>, <span class="mono">mutator.md</span>, <span class="mono">validator.md</span>, <span class="mono">house-style.md</span>, <span class="mono">rea.md</span> (opt-in REA evidence contract)</td></tr>
         <tr><td class="mono">tests/rea_up_harness.sh</td><td>stub-agent check of <span class="mono">up</span> with <span class="mono">RELAY_REA=1</span></td></tr>
+        <tr><td class="mono">tests/ps1_trust_prompt_test.ps1</td><td><span class="mono">relay.ps1</span>'s folder-trust handling against a stand-in menu on real psmux (Windows)</td></tr>
         <tr><td class="mono">docs/architecture/</td><td>the <a href="docs/architecture/relay-architecture.html" target="_blank" rel="noopener">interactive architecture map</a> and its Archify source</td></tr>
         <tr><td class="mono">commands/</td><td><span class="mono">relay-new</span>, <span class="mono">relay-up</span>, <span class="mono">relay-task</span>, <span class="mono">relay-auto</span>, <span class="mono">relay-status</span>, <span class="mono">relay-down</span>, <span class="mono">implement</span>, <span class="mono">execute-plan</span>, <span class="mono">sync-superpowers</span>, plus the deprecated <span class="mono">brainstorm</span> / <span class="mono">write-plan</span> aliases</td></tr>
         <tr><td class="mono">README.md</td><td>full reference: install, use, troubleshooting, what has actually been verified</td></tr>

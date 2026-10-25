@@ -755,12 +755,17 @@ thinking. `up` clears the folder-trust prompt automatically, but always run
 `capture -a <agent>` before concluding an agent is working.
 
 **The validator quits as soon as it starts in a new folder.** Claude Code 2.1.296 opens
-its folder-trust menu with the cursor on *No, exit*, so pressing Enter there quits. Since
-2026-10-12 `relay.sh` reads which line is selected and presses Down until it reaches the
-*Yes* option, then Enter; it only presses Enter straight away when it can't find a
-selected line. **`relay.ps1` has not been ported yet and still presses Enter**, so on Windows
-answer the prompt yourself with `attach`, or trust the folder once in an ordinary
-`claude` session before `up`.
+its folder-trust menu with the cursor on *No, exit*, so pressing Enter there quits. Both
+control planes now read which line is selected and press Down until it reaches the *Yes*
+option, then Enter. They only press Enter straight away when they can't find a selected
+line. `relay.sh` has done this since 2026-10-12 and `relay.ps1` since 2026-10-25. If a
+pane still quits, an unfamiliar menu layout is the likely cause: answer it yourself with
+`attach`, or trust the folder once in an ordinary `claude` session before `up`.
+
+The `relay.ps1` port turned up a second bug. Windows PowerShell 5.1 decodes psmux's UTF-8
+capture as the console's OEM code page, so every non-ASCII glyph on a pane arrived
+mangled. Claude Code's `❯` cursor came through as `Γ¥»`, and the cursor line was never
+recognised. Pane captures in `relay.ps1` are now decoded as UTF-8.
 
 **`wait` times out.** It exits 2 and dumps the last 30 lines of that agent's pane. Read
 that dump before retrying — it is almost always a prompt, not a slow model.
@@ -830,12 +835,16 @@ Being straight about this, since the failure modes above were all found the hard
 own tmux session with stub agents and a stub `rea`. It checks that the charter is copied,
 the boot prompts and launcher `PATH`, and the `rea` subcommand. It passes, most recently
 re-run on 2026-10-25. The folder-trust fix (#13) was written from a validator that really
-quit on a fresh clone on 2026-10-12.
+quit on a fresh clone on 2026-10-12. Its `relay.ps1` port is checked by
+`tests/ps1_trust_prompt_test.ps1` on real Windows PowerShell 5.1 and psmux. The test draws
+a stand-in trust menu in a psmux pane and runs `relay.ps1`'s own `Clear-BlockingPrompts`
+against it. It passes all three cases: cursor on *No*, cursor already on *Yes*, and no
+cursor glyph. The previous `relay.ps1` chose *No, exit* in the first case.
 
 *Not verified.* No task with a `## Reverse engineering` section has gone through a live
 run with real panes, and native decompilation is untested, because no Ghidra, Hopper or
-IDA was installed. The provider re-read (#12) has no test of its own. The folder-trust fix
-is bash-only; see Troubleshooting.
+IDA was installed. The provider re-read (#12) has no test of its own. The trust-menu test
+uses a stand-in menu, not a live Claude Code pane.
 
 **On the 2026-10-11 Jev gates, both ports,** split by what was actually exercised.
 
@@ -1125,7 +1134,9 @@ relay/
     ├── house-style.md     standing rules on form, read by every pane
     └── rea.md             REA evidence contract (opt-in: RELAY_REA=1)
 tests/
-└── rea_up_harness.sh      stub-agent check of `up` with REA on
+├── rea_up_harness.sh          stub-agent check of `up` with REA on
+├── ps1_trust_prompt_test.ps1  relay.ps1 folder-trust handling on real psmux (Windows)
+└── trust_prompt_menu.ps1      stand-in trust menu that test draws
 docs/architecture/
 ├── relay-architecture.html    interactive architecture map (Archify)
 └── relay.architecture.json    its source; re-run Archify finalize after editing
