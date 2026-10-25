@@ -460,6 +460,77 @@ clear_trust_prompts() {
   done
 }
 
+# --- REA evidence (opt-in: RELAY_REA=1) ---------------------------------------
+resolve_rea_bin() {
+  if [ -n "${RELAY_REA_BIN:-}" ]; then
+    printf '%s' "$RELAY_REA_BIN"
+    [ -x "$RELAY_REA_BIN" ] && return 0 || return 1
+  fi
+  local bin
+  bin="$(command -v rea 2>/dev/null || true)"
+  if [ -n "$bin" ] && [ -x "$bin" ]; then
+    printf '%s' "$bin"
+    return 0
+  fi
+  local newest
+  newest="$(ls -td "$HOME"/.nvm/versions/node/*/bin/rea 2>/dev/null | head -1 || true)"
+  if [ -n "$newest" ] && [ -x "$newest" ]; then
+    printf '%s' "$newest"
+    return 0
+  fi
+  return 1
+}
+
+rea_on() {
+  [ "${RELAY_REA:-0}" = "1" ] || return 1
+  local bin
+  bin="$(resolve_rea_bin 2>/dev/null)" || return 1
+  [ -x "$bin" ] || return 1
+  [ -f "$RELAY_HOME/charters/rea.md" ] || return 1
+  return 0
+}
+
+boot_prompt() {
+  local role="$1"
+  if rea_on; then
+    case "$role" in
+      executor)
+        printf 'Read .relay/house-style.md and .relay/executor.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files.\n'
+        ;;
+      validator)
+        printf 'Read .relay/validator.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade.\n'
+        ;;
+      scout)
+        printf 'Read .relay/house-style.md and .relay/scout.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on.\n'
+        ;;
+      mutator)
+        printf 'Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot.\n'
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  else
+    case "$role" in
+      executor)
+        printf 'Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files.\n'
+        ;;
+      validator)
+        printf 'Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade.\n'
+        ;;
+      scout)
+        printf 'Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on.\n'
+        ;;
+      mutator)
+        printf 'Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot.\n'
+        ;;
+      *)
+        return 1
+        ;;
+    esac
+  fi
+}
+
 usage() {
   cat <<'EOF'
 Medina Agentic Relay - tmux control plane
@@ -489,6 +560,8 @@ Medina Agentic Relay - tmux control plane
   relay.sh autopilot [options]              Run the whole queue unattended
   relay.sh bus                              List artifacts on the file bus
   relay.sh attach                           Print the attach command
+  relay.sh rea      [--print-boot <role>]   Report REA status and scope checks, or print
+                                            a role's boot prompt
 
   agents: executor | validator | scout | mutator
 
@@ -525,6 +598,10 @@ Medina Agentic Relay - tmux control plane
   the page does not state. Findings send the task back to the executor once, then go
   to the scout and validator as a note. RELAY_CITE=0 turns it off; RELAY_CITE_BOUNCE=0
   keeps the note without the bounce.
+
+  reverse engineering (REA, opt-in with RELAY_REA=1):
+    RELAY_REA=1 wires rea.md into the workspace and boot prompts, and puts rea on PATH.
+    RELAY_REA_BIN overrides the rea executable path.
 EOF
 }
 
@@ -687,6 +764,10 @@ cmd_up() {
   for c in $ALL_AGENTS house-style; do
     [ -f "$RELAY_HOME/charters/$c.md" ] && cp -f "$RELAY_HOME/charters/$c.md" "$workspace/.relay/$c.md"
   done
+  if rea_on; then
+    cp -f "$RELAY_HOME/charters/rea.md" "$workspace/.relay/rea.md"
+    mkdir -p "$workspace/.relay/rea"
+  fi
   local style_file="$workspace/.relay/house-style.md"
 
   local agy_exe claude_exe opencode_exe
@@ -714,6 +795,31 @@ cmd_up() {
   say "agy    bin   : $agy_exe   (executor + scout + mutator)"
   say "claude bin   : $claude_exe   (validator)"
   say "opencode bin : $opencode_exe   (fallback for executor/scout/mutator when agy's quota runs out)"
+  if rea_on; then
+    local rbin rver
+    rbin="$(resolve_rea_bin 2>/dev/null)"
+    rver="$("$rbin" --version 2>/dev/null || echo "unknown")"
+    say "rea    bin   : $rbin   ($rver)"
+  elif [ "${RELAY_REA:-0}" = "1" ]; then
+    local missing=""
+    local rbin
+    rbin="$(resolve_rea_bin 2>/dev/null || true)"
+    if [ -z "$rbin" ] || [ ! -x "$rbin" ]; then
+      if [ -n "${RELAY_REA_BIN:-}" ]; then
+        missing="binary '$RELAY_REA_BIN' not found"
+      else
+        missing="rea binary not found"
+      fi
+    fi
+    if [ ! -f "$RELAY_HOME/charters/rea.md" ]; then
+      if [ -n "$missing" ]; then
+        missing="$missing, charter '$RELAY_HOME/charters/rea.md' missing"
+      else
+        missing="charter '$RELAY_HOME/charters/rea.md' missing"
+      fi
+    fi
+    warn "RELAY_REA=1 but REA is unusable ($missing) - continuing without REA"
+  fi
 
   local launch="$workspace/.relay/launch"
 
@@ -762,7 +868,13 @@ cmd_up() {
     local name="$1" body="$2"
     {
       printf '#!/usr/bin/env bash\n'
-      printf 'export PATH="$HOME/.gemini/antigravity-cli/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n'
+      if rea_on; then
+        local rbin
+        rbin="$(resolve_rea_bin 2>/dev/null)"
+        printf 'export PATH="%s:$HOME/.gemini/antigravity-cli/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n' "$(dirname "$rbin")"
+      else
+        printf 'export PATH="$HOME/.gemini/antigravity-cli/bin:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"\n'
+      fi
       printf 'cd %q || exit 1\n' "$workspace"
       printf '%s\n' "$body"
       # $body must run as a plain foreground command, never `exec`-ed - this trailer
@@ -783,10 +895,10 @@ cmd_up() {
   }
 
   local exec_boot val_boot scout_boot mut_boot
-  exec_boot="Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files."
-  val_boot="Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
-  scout_boot="Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
-  mut_boot="Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
+  exec_boot="$(boot_prompt executor)"
+  val_boot="$(boot_prompt validator)"
+  scout_boot="$(boot_prompt scout)"
+  mut_boot="$(boot_prompt mutator)"
 
   # The mutator exists as its own pane for one reason: mutation testing is slow
   # (minutes to tens of minutes) and the relay cannot hold the validator behind
@@ -2065,6 +2177,31 @@ cmd_autopilot() {
   elif [ "${RELAY_JEV:-0}" = "1" ]; then
     run_log "RELAY_JEV=1 but Jev is not usable ($JEV_PY / $JEV_HELPER missing) - running without it"
   fi
+  if rea_on; then
+    local rbin rver
+    rbin="$(resolve_rea_bin 2>/dev/null)"
+    rver="$("$rbin" --version 2>/dev/null || echo "unknown")"
+    run_log "REA is ON ($rbin, version $rver)"
+  elif [ "${RELAY_REA:-0}" = "1" ]; then
+    local missing=""
+    local rbin
+    rbin="$(resolve_rea_bin 2>/dev/null || true)"
+    if [ -z "$rbin" ] || [ ! -x "$rbin" ]; then
+      if [ -n "${RELAY_REA_BIN:-}" ]; then
+        missing="binary '$RELAY_REA_BIN' not found"
+      else
+        missing="rea binary not found"
+      fi
+    fi
+    if [ ! -f "$RELAY_HOME/charters/rea.md" ]; then
+      if [ -n "$missing" ]; then
+        missing="$missing, charter '$RELAY_HOME/charters/rea.md' missing"
+      else
+        missing="charter '$RELAY_HOME/charters/rea.md' missing"
+      fi
+    fi
+    run_log "RELAY_REA=1 but REA is unusable ($missing) - running without it"
+  fi
 
   while true; do
     if stop_requested;                      then stop_reason="stopped by .relay/STOP"; break; fi
@@ -2577,6 +2714,110 @@ cmd_attach() {
   printf '    tmux attach -t %s\n' "$SESSION"
 }
 
+# ============================================================== REA ==========
+cmd_rea() {
+  local print_boot=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --print-boot)
+        [ $# -ge 2 ] || fail "Usage: relay.sh rea [--print-boot <role>]"
+        print_boot="$2"
+        shift 2
+        ;;
+      *)
+        fail "Unknown option for rea: $1"
+        ;;
+    esac
+  done
+
+  if [ -n "$print_boot" ]; then
+    if boot_prompt "$print_boot"; then
+      exit 0
+    else
+      printf 'Unknown role: %s\n' "$print_boot" >&2
+      exit 1
+    fi
+  fi
+
+  local rbin rver="" rcharter="$RELAY_HOME/charters/rea.md"
+  local bin_ok=0 charter_ok=0
+  rbin="$(resolve_rea_bin 2>/dev/null || true)"
+  if [ -n "$rbin" ] && [ -x "$rbin" ]; then
+    bin_ok=1
+    rver="$("$rbin" --version 2>/dev/null || echo "unknown")"
+  fi
+  if [ -f "$rcharter" ]; then
+    charter_ok=1
+  fi
+
+  if [ "${RELAY_REA:-0}" = "1" ]; then
+    printf 'RELAY_REA     : on\n'
+  else
+    printf 'RELAY_REA     : off\n'
+  fi
+
+  if [ "$bin_ok" -eq 1 ]; then
+    printf 'rea binary    : %s (%s)\n' "$rbin" "$rver"
+  else
+    if [ -n "${RELAY_REA_BIN:-}" ]; then
+      printf 'rea binary    : not found (%s)\n' "$RELAY_REA_BIN"
+    else
+      printf 'rea binary    : not found\n'
+    fi
+  fi
+
+  if [ "$charter_ok" -eq 1 ]; then
+    printf 'rea.md        : found (%s)\n' "$rcharter"
+  else
+    printf 'rea.md        : not found (%s)\n' "$rcharter"
+  fi
+
+  if rea_on; then
+    printf 'status        : ready\n'
+  else
+    if [ "${RELAY_REA:-0}" = "1" ]; then
+      local missing=""
+      if [ "$bin_ok" -eq 0 ]; then
+        if [ -n "${RELAY_REA_BIN:-}" ]; then
+          missing="binary '$RELAY_REA_BIN' not found"
+        else
+          missing="rea binary not found"
+        fi
+      fi
+      if [ "$charter_ok" -eq 0 ]; then
+        if [ -n "$missing" ]; then
+          missing="$missing, charter '$rcharter' missing"
+        else
+          missing="charter '$rcharter' missing"
+        fi
+      fi
+      printf 'status        : unusable (%s)\n' "$missing"
+    else
+      printf 'status        : disabled (set RELAY_REA=1 to enable)\n'
+    fi
+  fi
+
+  if [ "$bin_ok" -eq 1 ]; then
+    printf 'scope checks  :\n'
+    local doc_json
+    doc_json="$("$rbin" doctor --json 2>/dev/null || true)"
+    if [ -n "$doc_json" ]; then
+      printf '%s' "$doc_json" | python3 -I -c '
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    for check in data.get("scope_checks", []):
+        name = check.get("name", "")
+        cls = check.get("classification", "")
+        print(f"  {name}: {cls}")
+except Exception:
+    pass
+' 2>/dev/null || true
+    fi
+  fi
+  exit 0
+}
+
 # ============================================================= MAIN ==========
 need_tmux
 sub="${1:-status}"; shift || true
@@ -2595,6 +2836,7 @@ case "$sub" in
   autopilot) cmd_autopilot "$@" ;;
   bus)       cmd_bus       "$@" ;;
   attach)    cmd_attach    "$@" ;;
+  rea)       cmd_rea       "$@" ;;
   -h|--help|help) usage ;;
   *) usage; fail "Unknown subcommand: $sub" ;;
 esac
