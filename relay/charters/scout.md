@@ -507,7 +507,7 @@ are working versus blocked. A pane sitting on an auth screen, folder-trust promp
 approval dialog or a rate-limit menu is **stuck**, not busy — name the exact prompt it
 is waiting on. This is the relay's most common failure mode and the cheapest thing you do.
 
-## Reverse-engineering tasks
+## Reverse engineering
 
 When the task file includes a `## Reverse engineering` section, the rules in
 `.relay/rea.md` apply. The scout independently verifies every REA claim by re-running

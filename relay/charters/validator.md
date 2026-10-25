@@ -382,7 +382,7 @@ reports went unreviewed and a 30-minute run timed out having done nothing.
 - Never edit `.relay/results/`, `.relay/evidence/` or `.relay/mutation/` — those are other
   agents' channels. You read them; you do not correct them.
 
-## Reverse-engineering tasks
+## Reverse engineering
 
 When the task file includes a `## Reverse engineering` section, the rules in
 `.relay/rea.md` apply. The validator grades REA-backed claims against the saved

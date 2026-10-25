@@ -23,6 +23,14 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
+if [ -z "${HOME:-}" ]; then
+  HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)"
+  if [ -z "$HOME" ]; then
+    HOME="$(python3 -c 'import pwd, os; print(pwd.getpwuid(os.getuid()).pw_dir)' 2>/dev/null || true)"
+  fi
+  export HOME
+fi
+
 RELAY_HOME="${RELAY_HOME:-$HOME/.claude/relay}"
 STATE_FILE="$RELAY_HOME/state"
 SESSION="${RELAY_SESSION:-relay}"
@@ -473,7 +481,7 @@ resolve_rea_bin() {
     return 0
   fi
   local newest
-  newest="$(ls -td "$HOME"/.nvm/versions/node/*/bin/rea 2>/dev/null | head -1 || true)"
+  newest="$(ls -d "$HOME"/.nvm/versions/node/*/bin/rea 2>/dev/null | sort -V | tail -1 || true)"
   if [ -n "$newest" ] && [ -x "$newest" ]; then
     printf '%s' "$newest"
     return 0
@@ -488,6 +496,27 @@ rea_on() {
   [ -x "$bin" ] || return 1
   [ -f "$RELAY_HOME/charters/rea.md" ] || return 1
   return 0
+}
+
+rea_missing_reason() {
+  local missing=""
+  local rbin
+  rbin="$(resolve_rea_bin 2>/dev/null || true)"
+  if [ -z "$rbin" ] || [ ! -x "$rbin" ]; then
+    if [ -n "${RELAY_REA_BIN:-}" ]; then
+      missing="binary '$RELAY_REA_BIN' not found"
+    else
+      missing="rea binary not found"
+    fi
+  fi
+  if [ ! -f "$RELAY_HOME/charters/rea.md" ]; then
+    if [ -n "$missing" ]; then
+      missing="$missing, charter '$RELAY_HOME/charters/rea.md' missing"
+    else
+      missing="charter '$RELAY_HOME/charters/rea.md' missing"
+    fi
+  fi
+  printf '%s' "$missing"
 }
 
 boot_prompt() {
@@ -801,23 +830,8 @@ cmd_up() {
     rver="$("$rbin" --version 2>/dev/null || echo "unknown")"
     say "rea    bin   : $rbin   ($rver)"
   elif [ "${RELAY_REA:-0}" = "1" ]; then
-    local missing=""
-    local rbin
-    rbin="$(resolve_rea_bin 2>/dev/null || true)"
-    if [ -z "$rbin" ] || [ ! -x "$rbin" ]; then
-      if [ -n "${RELAY_REA_BIN:-}" ]; then
-        missing="binary '$RELAY_REA_BIN' not found"
-      else
-        missing="rea binary not found"
-      fi
-    fi
-    if [ ! -f "$RELAY_HOME/charters/rea.md" ]; then
-      if [ -n "$missing" ]; then
-        missing="$missing, charter '$RELAY_HOME/charters/rea.md' missing"
-      else
-        missing="charter '$RELAY_HOME/charters/rea.md' missing"
-      fi
-    fi
+    local missing
+    missing="$(rea_missing_reason)"
     warn "RELAY_REA=1 but REA is unusable ($missing) - continuing without REA"
   fi
 
@@ -2183,23 +2197,8 @@ cmd_autopilot() {
     rver="$("$rbin" --version 2>/dev/null || echo "unknown")"
     run_log "REA is ON ($rbin, version $rver)"
   elif [ "${RELAY_REA:-0}" = "1" ]; then
-    local missing=""
-    local rbin
-    rbin="$(resolve_rea_bin 2>/dev/null || true)"
-    if [ -z "$rbin" ] || [ ! -x "$rbin" ]; then
-      if [ -n "${RELAY_REA_BIN:-}" ]; then
-        missing="binary '$RELAY_REA_BIN' not found"
-      else
-        missing="rea binary not found"
-      fi
-    fi
-    if [ ! -f "$RELAY_HOME/charters/rea.md" ]; then
-      if [ -n "$missing" ]; then
-        missing="$missing, charter '$RELAY_HOME/charters/rea.md' missing"
-      else
-        missing="charter '$RELAY_HOME/charters/rea.md' missing"
-      fi
-    fi
+    local missing
+    missing="$(rea_missing_reason)"
     run_log "RELAY_REA=1 but REA is unusable ($missing) - running without it"
   fi
 
@@ -2776,21 +2775,8 @@ cmd_rea() {
     printf 'status        : ready\n'
   else
     if [ "${RELAY_REA:-0}" = "1" ]; then
-      local missing=""
-      if [ "$bin_ok" -eq 0 ]; then
-        if [ -n "${RELAY_REA_BIN:-}" ]; then
-          missing="binary '$RELAY_REA_BIN' not found"
-        else
-          missing="rea binary not found"
-        fi
-      fi
-      if [ "$charter_ok" -eq 0 ]; then
-        if [ -n "$missing" ]; then
-          missing="$missing, charter '$rcharter' missing"
-        else
-          missing="charter '$rcharter' missing"
-        fi
-      fi
+      local missing
+      missing="$(rea_missing_reason)"
       printf 'status        : unusable (%s)\n' "$missing"
     else
       printf 'status        : disabled (set RELAY_REA=1 to enable)\n'

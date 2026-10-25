@@ -133,7 +133,7 @@ autopilot spends its restart budget killing an agent that was working fine.
 - Keep working until the task is genuinely done. Partial work is fine to report,
   but do not stop early and call it complete.
 
-## Reverse-engineering tasks
+## Reverse engineering
 
 When the task file includes a `## Reverse engineering` section, the rules in
 `.relay/rea.md` apply. The executor runs authorized REA commands against task-specified
