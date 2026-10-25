@@ -132,3 +132,12 @@ autopilot spends its restart budget killing an agent that was working fine.
   write status BLOCKED with the specific question rather than guessing.
 - Keep working until the task is genuinely done. Partial work is fine to report,
   but do not stop early and call it complete.
+
+## Reverse-engineering tasks
+
+When the task file includes a `## Reverse engineering` section, the rules in
+`.relay/rea.md` apply. The executor runs authorized REA commands against task-specified
+targets with `--json`, saving raw stdout to `.relay/rea/NNN-<slug>/<step>.json` and
+stderr to `<step>.stderr`. In the result file, cite each finding by its one-line
+command, saved file path, `evidence_id`, and a minimal `jq` or `python3 -I -c` extract.
+Never paste full JSON records. If a required engine is missing, report `BLOCKED`.
