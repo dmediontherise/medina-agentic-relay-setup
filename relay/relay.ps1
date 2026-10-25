@@ -22,12 +22,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('new', 'up', 'down', 'status', 'send', 'dispatch', 'capture', 'wait', 'attach', 'bus', 'health', 'restart', 'snapshot', 'autopilot')]
+    [ValidateSet('new', 'up', 'down', 'status', 'send', 'dispatch', 'capture', 'wait', 'attach', 'bus', 'health', 'restart', 'snapshot', 'autopilot', 'rea')]
     [string]$Command = 'status',
 
     # Positional so 'relay new my-app' reads the way you would say it.
     [Parameter(Position = 1)]
     [string]$Name,
+
+    [ValidateSet('executor', 'scout', 'validator', 'mutator')]
+    [string]$PrintBoot,
 
     [string]$Workspace,
     [ValidateSet('executor', 'validator', 'scout', 'mutator', 'all')]
@@ -104,6 +107,107 @@ function Resolve-Exe($name, $candidates) {
 
 function Fail($msg) { Write-Host "[relay] ERROR: $msg" -ForegroundColor Red; exit 1 }
 function Say($msg)  { Write-Host "[relay] $msg" -ForegroundColor Cyan }
+
+# --- REA evidence (opt-in: $env:RELAY_REA = '1') -----------------------------
+function Resolve-ReaBin {
+    if ($env:RELAY_REA_BIN) {
+        if (Test-Path $env:RELAY_REA_BIN) {
+            return (Resolve-Path $env:RELAY_REA_BIN).Path
+        }
+        return $null
+    }
+    return Resolve-Exe 'rea' @(
+        '%APPDATA%\npm\rea.cmd',
+        '%APPDATA%\npm\rea.ps1'
+    )
+}
+
+function Test-ReaOn {
+    if ($env:RELAY_REA -ne '1') { return $false }
+    $bin = Resolve-ReaBin
+    if (-not $bin -or -not (Test-Path $bin)) { return $false }
+    $charter = Join-Path $RelayHome 'charters\rea.md'
+    if (-not (Test-Path $charter)) { return $false }
+    return $true
+}
+
+function Get-ReaVersion($bin) {
+    if (-not $bin -or -not (Test-Path $bin)) { return 'unknown' }
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'SilentlyContinue'
+    $v = $null
+    try {
+        $v = (& $bin --version 2>$null | Out-String).Trim()
+    }
+    catch {}
+    $ErrorActionPreference = $prev
+    if ($v) { return $v }
+    return 'unknown'
+}
+
+function Get-ReaMissingReason {
+    $missing = ''
+    $rbin = Resolve-ReaBin
+    if (-not $rbin -or -not (Test-Path $rbin)) {
+        if ($env:RELAY_REA_BIN) {
+            $missing = "binary '$($env:RELAY_REA_BIN)' not found"
+        }
+        else {
+            $missing = 'rea binary not found'
+        }
+    }
+    $charter = Join-Path $RelayHome 'charters\rea.md'
+    if (-not (Test-Path $charter)) {
+        if ($missing) {
+            $missing = "$missing, charter '$charter' missing"
+        }
+        else {
+            $missing = "charter '$charter' missing"
+        }
+    }
+    return $missing
+}
+
+function Get-BootPrompt($role) {
+    if (Test-ReaOn) {
+        switch ($role) {
+            'executor' {
+                return 'Read .relay/house-style.md and .relay/executor.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files.'
+            }
+            'validator' {
+                return 'Read .relay/validator.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade.'
+            }
+            'scout' {
+                return 'Read .relay/house-style.md and .relay/scout.md and .relay/rea.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on.'
+            }
+            'mutator' {
+                return 'Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot.'
+            }
+            default {
+                return $null
+            }
+        }
+    }
+    else {
+        switch ($role) {
+            'executor' {
+                return 'Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files.'
+            }
+            'validator' {
+                return 'Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade.'
+            }
+            'scout' {
+                return 'Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on.'
+            }
+            'mutator' {
+                return 'Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot.'
+            }
+            default {
+                return $null
+            }
+        }
+    }
+}
 
 function Get-State {
     if (-not (Test-Path $StateFile)) { Fail "Relay is not up. Run: relay.ps1 up -Workspace <path>" }
@@ -766,6 +870,12 @@ if ($Command -eq 'up') {
         $src = Join-Path $charterDir "$c.md"
         if (Test-Path $src) { Copy-Item $src (Join-Path $Workspace ".relay\$c.md") -Force }
     }
+    if (Test-ReaOn) {
+        $reaSrc = Join-Path $charterDir 'rea.md'
+        if (Test-Path $reaSrc) { Copy-Item $reaSrc (Join-Path $Workspace '.relay\rea.md') -Force }
+        $reaWorkspaceDir = Join-Path $Workspace '.relay\rea'
+        New-Item -ItemType Directory -Force $reaWorkspaceDir | Out-Null
+    }
     $styleFile = Join-Path $Workspace '.relay\house-style.md'
 
     # Preflight: the executor runs Antigravity CLI (agy). Gemini CLI's "Sign in with
@@ -809,6 +919,15 @@ if ($Command -eq 'up') {
     Say "agy    bin   : $agyExe   (executor + scout)"
     Say "claude bin   : $claudeExe   (validator)"
     Say "opencode bin : $opencodeExe   (fallback for executor/scout/mutator when agy's quota runs out)"
+    if (Test-ReaOn) {
+        $rbin = Resolve-ReaBin
+        $rver = Get-ReaVersion $rbin
+        Say "rea    bin   : $rbin   ($rver)"
+    }
+    elseif ($env:RELAY_REA -eq '1') {
+        $missing = Get-ReaMissingReason
+        Write-Host "[relay] WARNING: RELAY_REA=1 but REA is unusable ($missing) - continuing without REA" -ForegroundColor Yellow
+    }
 
     # --- build the launchers, then create panes that RUN them -----------------
     # Do not type launch commands into an interactive shell. Two independent psmux
@@ -823,8 +942,16 @@ if ($Command -eq 'up') {
 
     function Write-Launcher($name, $body) {
         $path = Join-Path $launchDir "$name.ps1"
+        $reaPathLine = ''
+        if (Test-ReaOn) {
+            $rbin = Resolve-ReaBin
+            if ($rbin) {
+                $reaBinDir = [System.IO.Path]::GetDirectoryName($rbin)
+                $reaPathLine = "`"$reaBinDir;`" + "
+            }
+        }
         $prelude = @(
-            '$env:Path = [Environment]::GetEnvironmentVariable("Path","Machine") + ";" +'
+            ('$env:Path = ' + $reaPathLine + '[Environment]::GetEnvironmentVariable("Path","Machine") + ";" +')
             '            [Environment]::GetEnvironmentVariable("Path","User") + ";" +'
             '            "$env:LOCALAPPDATA\agy\bin;$env:USERPROFILE\.local\bin"'
             ''
@@ -891,8 +1018,8 @@ if ($Command -eq 'up') {
     # --add-dir pins the workspace explicitly and makes the tools run there. psmux's
     # -c is not sufficient - it sets the pane's cwd correctly, and agy ignores it.
     $agyRoot = "--add-dir `"$Workspace`""
-    $agyBoot = "Read .relay/house-style.md and .relay/executor.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for task files."
-    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModelExec $agyFlags -i `"$agyBoot`"`r`n"
+    $execBoot = Get-BootPrompt 'executor'
+    $execLauncher = Write-Launcher 'executor' "& `"$agyExe`" $agyRoot --model $agyModelExec $agyFlags -i `"$execBoot`"`r`n"
 
     # acceptEdits permits file edits but still gates every new Bash command shape behind
     # an approval prompt - which strands a review pane, whose entire job is running
@@ -923,7 +1050,7 @@ if ($Command -eq 'up') {
     # conclusions as claims not facts, never queue work off a mere concern). If those
     # start slipping, that is the signal to put Opus back here - not raw verdict accuracy,
     # which looks fine right up until the loop stops terminating.
-    $valBoot = "Read .relay/validator.md and follow it as your operating contract for this session. Reply READY when loaded, then wait for evidence files to grade."
+    $valBoot = Get-BootPrompt 'validator'
     # house-style goes in the SYSTEM prompt, not the boot message. A charter read as the
     # reply to a first user turn is a fact in a transcript: it competes with Claude Code's
     # own stock system prompt and decays as the conversation grows. An appended system
@@ -938,7 +1065,7 @@ if ($Command -eq 'up') {
     # the code and sees only the diff and the result file. Same launch posture this pane
     # already ran under, carried over unchanged via $agyFlags. Its charter keeps it out of
     # the source tree, and .relay/probe/ gives it a sanctioned place to write instead.
-    $scoutBoot = "Read .relay/house-style.md and .relay/scout.md and follow them as your operating contract for this session. Reply READY when loaded, then wait for result files to gather evidence on."
+    $scoutBoot = Get-BootPrompt 'scout'
     $scoutLauncher = Write-Launcher 'scout' "& `"$agyExe`" $agyRoot --model $agyModelScout $agyFlags -i `"$scoutBoot`"`r`n"
 
     # Mutator: the secondary scout, agy again, dedicated to mutation testing.
@@ -950,7 +1077,7 @@ if ($Command -eq 'up') {
     # free agy pane buys us out of. It runs against a frozen snapshot of the workspace
     # in .relay/mutants/<task>/, so it can still be grinding on task 007 while the
     # executor is already editing the real tree for task 008.
-    $mutBoot = "Read .relay/house-style.md and .relay/mutator.md and follow them as your operating contract for this session. Reply READY when loaded, then wait to be pointed at a mutation snapshot."
+    $mutBoot = Get-BootPrompt 'mutator'
     $mutLauncher = Write-Launcher 'mutator' "& `"$agyExe`" $agyRoot --model $agyModelMut $agyFlags -i `"$mutBoot`"`r`n"
 
     # opencode fallback launchers - built now, alongside the agy ones, so a mid-run
@@ -960,7 +1087,7 @@ if ($Command -eq 'up') {
     # Windows psmux to behave like agy/claude do in a tiled pane - persistent process,
     # screen-scrapable busy/booted patterns - unlike opencode's full panelled TUI or its
     # one-shot 'run' subcommand, neither of which fit this control plane's model.
-    $execOcLauncher   = Write-Launcher 'executor-oc' "& `"$opencodeExe`" --mini -m $ocModelExec $ocAutoFlag --prompt `"$agyBoot`"`r`n"
+    $execOcLauncher   = Write-Launcher 'executor-oc' "& `"$opencodeExe`" --mini -m $ocModelExec $ocAutoFlag --prompt `"$execBoot`"`r`n"
     $scoutOcLauncher  = Write-Launcher 'scout-oc'    "& `"$opencodeExe`" --mini -m $ocModelScout $ocAutoFlag --prompt `"$scoutBoot`"`r`n"
     $mutOcLauncher    = Write-Launcher 'mutator-oc'  "& `"$opencodeExe`" --mini -m $ocModelMut $ocAutoFlag --prompt `"$mutBoot`"`r`n"
 
@@ -1670,6 +1797,87 @@ if ($Command -eq 'bus') {
 if ($Command -eq 'attach') {
     Say "Run this in your own terminal (cannot attach from a tool call):"
     Write-Host "    psmux attach -t $Session" -ForegroundColor White
+    exit 0
+}
+
+# ============================================================== REA ===========
+if ($Command -eq 'rea') {
+    if ($PrintBoot) {
+        $prompt = Get-BootPrompt $PrintBoot
+        if ($prompt) {
+            Write-Output $prompt
+            exit 0
+        }
+        else {
+            [Console]::Error.WriteLine("Unknown role: $PrintBoot")
+            exit 1
+        }
+    }
+
+    $rbin = Resolve-ReaBin
+    $binOk = ($null -ne $rbin) -and (Test-Path $rbin)
+    $rcharter = Join-Path $RelayHome 'charters\rea.md'
+    $charterOk = Test-Path $rcharter
+
+    if ($env:RELAY_REA -eq '1') {
+        Write-Host 'RELAY_REA     : on'
+    }
+    else {
+        Write-Host 'RELAY_REA     : off'
+    }
+
+    if ($binOk) {
+        $rver = Get-ReaVersion $rbin
+        Write-Host "rea binary    : $rbin ($rver)"
+    }
+    else {
+        if ($env:RELAY_REA_BIN) {
+            Write-Host "rea binary    : not found ($($env:RELAY_REA_BIN))"
+        }
+        else {
+            Write-Host 'rea binary    : not found'
+        }
+    }
+
+    if ($charterOk) {
+        Write-Host "rea.md        : found ($rcharter)"
+    }
+    else {
+        Write-Host "rea.md        : not found ($rcharter)"
+    }
+
+    if (Test-ReaOn) {
+        Write-Host 'status        : ready'
+    }
+    else {
+        if ($env:RELAY_REA -eq '1') {
+            $missing = Get-ReaMissingReason
+            Write-Host "status        : unusable ($missing)"
+        }
+        else {
+            Write-Host 'status        : disabled (set RELAY_REA=1 to enable)'
+        }
+    }
+
+    if ($binOk) {
+        Write-Host 'scope checks  :'
+        $prev = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+        try {
+            $docRaw = & $rbin doctor --json 2>$null | Out-String
+            if ($docRaw) {
+                $docJson = $docRaw | ConvertFrom-Json
+                if ($docJson -and $docJson.scope_checks) {
+                    foreach ($chk in $docJson.scope_checks) {
+                        Write-Host "  $($chk.name): $($chk.classification)"
+                    }
+                }
+            }
+        }
+        catch {}
+        $ErrorActionPreference = $prev
+    }
+
     exit 0
 }
 
@@ -2554,6 +2762,15 @@ if ($Command -eq 'autopilot') {
     }
     elseif ($env:RELAY_JEV -eq '1') {
         Write-RunLog $log "RELAY_JEV=1 but no usable Jev runner (native python + relay_jev.py, or the WSL install) - running without it"
+    }
+    if (Test-ReaOn) {
+        $rbin = Resolve-ReaBin
+        $rver = Get-ReaVersion $rbin
+        Write-RunLog $log "REA is ON ($rbin, version $rver)"
+    }
+    elseif ($env:RELAY_REA -eq '1') {
+        $missing = Get-ReaMissingReason
+        Write-RunLog $log "RELAY_REA=1 but REA is unusable ($missing) - running without it"
     }
 
     while ($true) {
