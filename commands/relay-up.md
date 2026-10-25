@@ -33,6 +33,12 @@ To scaffold a brand-new project instead of using the current one, use `/relay-ne
    (a free model standing in for Gemini), not a substitute for a healthy agy account — set
    `RELAY_NO_OPENCODE_FALLBACK=1` to disable it entirely.
 
+   Reverse engineering (opt-in with `RELAY_REA=1`): when set, `up` copies `rea.md` into
+   `<workspace>/.relay/rea.md`, creates `.relay/rea/`, wires reverse engineering evidence
+   into the executor, scout, and validator boot prompts, and puts REA's binary directory
+   on each launcher's `PATH` (`RELAY_REA_BIN` overrides the executable). Check REA binary
+   and charter availability before starting with `relay.sh rea` (or `relay.ps1 -Command rea`).
+
 2. Report any preflight warning the script prints verbatim. A missing `agy` or `claude`
    binary means that pane will not start at all.
 

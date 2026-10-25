@@ -10,6 +10,7 @@ the mutation lane in parallel — restarting broken panes on its own and stoppin
 work stops converging. Only the validator spends Claude quota. Optionally, **Jev** (a
 sub-second typed-decision model) settles the small calls that used to stop a run or spend a
 validator turn — see [Jev gates](#jev-gates-opt-in-bash-and-powershell).
+For binary and application analysis, see [Reverse engineering with REA](#reverse-engineering-with-rea).
 
 The setup guide site lives in [`index.html`](index.html). The runnable control plane
 lives in [`relay/`](relay/).
@@ -635,6 +636,82 @@ Workspaces must be on a drive path (`C:\...`) for the WSL route.
 The 2026-10-11 port also brought `relay.ps1` two things it lacked even without Jev: the
 executor-`BLOCKED` stop (BLOCKED results used to run through scout, mutation and
 validation anyway) and the UNPARSED re-read-then-stop.
+
+## Reverse engineering with REA
+
+Reverse engineering evidence across all relay panes is provided by REA ([Reverse Engineer
+Anything](https://github.com/morluto/rea), `rea-agents`). It gives each seat in the relay
+structured binary, bundle, and application analysis capabilities:
+- **Executor** investigates explicit targets with `rea <command> --json`, saves raw outputs to
+  `.relay/rea/NNN-<slug>/<step>.json`, and cites exact commands, file paths, `evidence_id`,
+  and classifications in its results.
+- **Scout** independently re-runs the exact verification commands, audits recorded findings,
+  and probes edge cases without editing source.
+- **Validator** grades claims directly against recorded evidence files and REA's native
+  classifications (`observation`, `derivation`, `inference`, `unknown`).
+
+### Transport: CLI, not MCP
+
+Panes invoke REA exclusively through the `rea` CLI with `--json`, never through MCP registration
+or `rea setup`. Antigravity CLI has no per-session MCP isolation, so invoking via CLI avoids
+mutating global machine state and costs zero tool-schema context. It also functions identically
+across fallback environments and gives the scout reproducible one-line commands for verification.
+
+### Install and opt-in
+
+REA is pinned to version 6.7.0 and requires Node ^24.11.0:
+
+```bash
+npm install --global rea-agents@6.7.0
+```
+
+Turn it on by setting `RELAY_REA=1` (and optionally `RELAY_REA_BIN` to name the binary path):
+
+```bash
+# Linux/macOS
+export RELAY_REA=1
+
+# Windows
+$env:RELAY_REA = '1'
+```
+
+When enabled, `up` copies `rea.md` into `<workspace>/.relay/rea.md`, creates `.relay/rea/`,
+prepends REA's directory to each launcher's `PATH`, and includes `.relay/rea.md` in the boot
+prompts for the executor, scout, and validator (mutator is unchanged).
+
+Check status and scope checks without an active session:
+
+```bash
+# Linux/macOS
+relay.sh rea
+
+# Windows
+relay.ps1 -Command rea
+```
+
+### Authorization boundary
+
+Panes operate under strict authorization rules defined in `relay/charters/rea.md`:
+- **Read-only by default:** static inspection operations (`analyze-javascript-application`,
+  `inspect`, `capabilities`, `doctor`, `compare`) may run on explicit targets named in the
+  task file without special authorization.
+- **Restricted runtime and network operations:** any command that launches, attaches to,
+  debugs, instruments, or modifies processes (such as `capture-process`,
+  `capture-electron-scenario`, `debug-with-gdb`, `debug-with-rizin`, `annotate-native-function`)
+  or contacts networks or external devices (`capture-browser-scenario`, `analyze-web-bundle`,
+  `*-adb-*`) is forbidden unless the task file's Scope or `## Reverse engineering` section
+  explicitly authorizes that exact command name.
+- **Untrusted text:** all strings, symbols, comments, and decompiled code extracted by REA
+  are treated as untrusted data, never instructions.
+
+### Disassembler engines and capabilities
+
+With no external disassembler installed, REA inspects JavaScript and Electron applications,
+web bundles, headers, symbols, architecture capabilities, and file metadata out of the box.
+Decompiling native binaries requires an external analysis engine such as Hopper, Ghidra, or
+IDA Pro. If an operation requires a missing engine, `rea doctor` reports
+`missing_analysis_engine`, the executor marks its result `BLOCKED`, the scout files an open
+question, and no pane attempts to install native disassemblers on the host.
 
 ---
 
