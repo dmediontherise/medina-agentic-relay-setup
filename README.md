@@ -16,6 +16,14 @@ For binary and application analysis, see [Reverse engineering with REA](#reverse
 [Why the scout exists](#why-the-scout-exists) is the idea the rest of it is built around.
 To run it, go to [Install](#install) and [Use it](#use-it).
 
+**See it:** [`docs/architecture/relay-architecture.html`](docs/architecture/relay-architecture.html)
+is an interactive map of one task's path through the relay. Download it and open it in a
+browser. Every box links to the lines of `relay.sh`, the charters and the helpers that it
+stands for, at the commit it was drawn from. It was made with
+[Archify](https://github.com/tt-a1i/archify) from
+[`relay.architecture.json`](docs/architecture/relay.architecture.json); edit that file and
+re-run Archify's `finalize` to redraw it.
+
 The setup guide site lives in [`index.html`](index.html). The runnable control plane
 lives in [`relay/`](relay/).
 
@@ -529,7 +537,14 @@ relay.ps1 restart -Agent executor                  # no -Provider: keeps whateve
 ```
 
 `--provider` / `-Provider` only takes a single agent, never `all` — the three panes can be
-on different providers at once, and `status` shows the split. Opt out of the automatic
+on different providers at once, and `status` shows the split.
+
+A manual switch is safe while `autopilot` runs in another shell. Before 2026-10-12 it was
+not: autopilot kept the state it loaded at startup and its next restart (keepalive,
+preemptive recycle, fault restart) wrote the old provider and pane ids back over yours,
+after which `health` looked for the wrong binary and called the pane CRASHED. Every restart
+path in both control planes now re-reads the state file first (`refresh_state` /
+`Sync-StateFromDisk`), because every writer saves straight after it changes anything. Opt out of the automatic
 side entirely (keep the manual command available) with `RELAY_NO_OPENCODE_FALLBACK=1`.
 
 **This is a degradation, not a substitute.** A free model standing in for
@@ -739,6 +754,14 @@ folder-trust gate, an auth screen, or an approval dialog looks exactly like one 
 thinking. `up` clears the folder-trust prompt automatically, but always run
 `capture -a <agent>` before concluding an agent is working.
 
+**The validator quits as soon as it starts in a new folder.** Claude Code 2.1.296 opens
+its folder-trust menu with the cursor on *No, exit*, so pressing Enter there quits. Since
+2026-10-12 `relay.sh` reads which line is selected and presses Down until it reaches the
+*Yes* option, then Enter; it only presses Enter straight away when it can't find a
+selected line. **`relay.ps1` has not been ported yet and still presses Enter**, so on Windows
+answer the prompt yourself with `attach`, or trust the folder once in an ordinary
+`claude` session before `up`.
+
 **`wait` times out.** It exits 2 and dumps the last 30 lines of that agent's pane. Read
 that dump before retrying — it is almost always a prompt, not a slow model.
 
@@ -800,6 +823,19 @@ read*, not just that the word appeared.
 ## What has actually been verified
 
 Being straight about this, since the failure modes above were all found the hard way.
+
+**On the 2026-10-12 to 2026-10-24 changes (PRs #12–#14).**
+
+*Verified.* REA (#14): `tests/rea_up_harness.sh` brings a real `relay.sh up` up in its
+own tmux session with stub agents and a stub `rea`. It checks that the charter is copied,
+the boot prompts and launcher `PATH`, and the `rea` subcommand. It passes, most recently
+re-run on 2026-10-25. The folder-trust fix (#13) was written from a validator that really
+quit on a fresh clone on 2026-10-12.
+
+*Not verified.* No task with a `## Reverse engineering` section has gone through a live
+run with real panes, and native decompilation is untested, because no Ghidra, Hopper or
+IDA was installed. The provider re-read (#12) has no test of its own. The folder-trust fix
+is bash-only; see Troubleshooting.
 
 **On the 2026-10-11 Jev gates, both ports,** split by what was actually exercised.
 
@@ -1085,7 +1121,14 @@ relay/
     ├── executor.md
     ├── scout.md
     ├── mutator.md
-    └── validator.md
+    ├── validator.md
+    ├── house-style.md     standing rules on form, read by every pane
+    └── rea.md             REA evidence contract (opt-in: RELAY_REA=1)
+tests/
+└── rea_up_harness.sh      stub-agent check of `up` with REA on
+docs/architecture/
+├── relay-architecture.html    interactive architecture map (Archify)
+└── relay.architecture.json    its source; re-run Archify finalize after editing
 commands/                  Claude Code slash commands
 ├── relay-new.md           scaffold a project + bring the relay up
 ├── relay-up.md            bring the relay up on an existing project

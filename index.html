@@ -709,6 +709,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <a href="#tasks" class="nav-link"><span class="nav-icon">◻</span>Tasks</a>
       <a href="#relay" class="nav-link"><span class="nav-icon">⇌</span>Relay Architecture</a>
       <a href="#jev" class="nav-link"><span class="nav-icon">⚡</span>Jev Gates</a>
+      <a href="#rea" class="nav-link"><span class="nav-icon">⌕</span>Reverse Engineering</a>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Resources</div>
@@ -964,6 +965,13 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <div>
         <strong>Jev-AI-Skill + TypeSafe key <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
         <span>Sub-second typed decisions for autopilot's small calls — answering an executor's <code>BLOCKED</code>, reading a headerless verdict, skipping empty mutation sweeps, flagging tests that recompute their own expected values, screening changed files for prompt injection, and shadow-logging stuck panes. See <a href="#jev">Jev gates</a>. Install: <code>git clone https://github.com/King4s/Jev-AI-Skill.git ~/Jev-AI-Skill &amp;&amp; ~/Jev-AI-Skill/install.sh</code>, key in <code>~/.config/jev-loop/typesafe_api_key</code>. Windows can reuse a WSL install. Turn on per run with <code>RELAY_JEV=1</code></span>
+      </div>
+    </div>
+    <div class="glass-card prereq-item">
+      <div class="prereq-item-icon" style="background:rgba(191,90,242,.12);">⌕</div>
+      <div>
+        <strong>REA <span style="color:var(--text2);font-weight:400;">(optional)</span></strong>
+        <span>Reverse-engineering evidence for tasks with a <code>## Reverse engineering</code> section. Install: <code>npm install --global rea-agents@6.7.0</code> (needs Node ^24.11.0). Turn on per run with <code>RELAY_REA=1</code>. See <a href="#rea">Reverse engineering</a></span>
       </div>
     </div>
     <div class="glass-card prereq-item">
@@ -1799,6 +1807,20 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <span class="mono">psmux</span> panes, coordinating over a file bus at <span class="mono">.relay/</span>.
   </p>
 
+  <div class="info-box">
+    <span class="info-box-icon">🗺️</span>
+    <div>
+      <strong style="color:var(--text)">See one task's whole path.</strong>
+      <a href="docs/architecture/relay-architecture.html" target="_blank" rel="noopener">The interactive architecture map</a>
+      follows one task from the orchestrator's spec, through autopilot, the four panes, the citation check and the
+      opt-in Jev and REA helpers, to the validator's verdict and the follow-up task it writes on a FAIL. Click a box
+      to see the lines of <span class="mono">relay.sh</span>, the charters and the helpers that it stands for, or
+      trace a route through it. It is drawn with <a href="https://github.com/tt-a1i/archify" target="_blank" rel="noopener">Archify</a>
+      from <span class="mono">docs/architecture/relay.architecture.json</span> and is a single HTML file, so you can
+      download it and open it offline.
+    </div>
+  </div>
+
   <div class="glass-card" style="padding:24px;margin:24px 0;">
     <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The five roles</h3>
     <table class="glass-table" style="margin-top:0;">
@@ -1880,7 +1902,8 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <span class="mono">restart -a &lt;role&gt; --provider opencode</span> (and back with
       <span class="mono">--provider agy</span> once quota resets), or turn the automatic side off entirely with
       <span class="mono">RELAY_NO_OPENCODE_FALLBACK=1</span>. Never applies to the validator, which stays
-      Claude-only by design.
+      Claude-only by design. A manual switch is safe while autopilot runs in another shell: since 2026-10-12 every
+      restart path re-reads the state file first, so autopilot no longer writes the old provider back over yours.
     </div>
   </div>
 
@@ -1940,6 +1963,10 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <strong style="color:var(--text)">The most common failure is a stuck pane, not a slow model.</strong>
       A pane sitting on a folder-trust gate, an auth screen, or an approval dialog looks exactly like one that is
       thinking. Always run <span class="mono">capture -a &lt;agent&gt;</span> before concluding an agent is working.
+      Claude Code 2.1.296 opens its folder-trust menu with the cursor on <em>No, exit</em>, so since 2026-10-12
+      <span class="mono">relay.sh</span> presses Down until <em>Yes</em> is selected instead of pressing Enter straight away.
+      <strong style="color:var(--text)"><span class="mono">relay.ps1</span> has not been ported yet</strong>: on Windows,
+      answer the validator's trust prompt yourself, or trust the folder once in a normal <span class="mono">claude</span> session first.
       Reviewers run with permissions bypassed for exactly this reason — <span class="mono">acceptEdits</span> gates
       every new command shape behind a prompt, which turns an unattended verification agent into a permanent hang.
       What keeps the scout and validator from editing the code they judge is their <strong style="color:var(--text)">charters,
@@ -2062,6 +2089,83 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </div>
 </section>
 
+<!-- REVERSE ENGINEERING (REA) -->
+<section id="rea" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Architecture</div>
+  <h2>Reverse <span class="gradient-text">Engineering</span></h2>
+  <p>
+    <a href="https://github.com/morluto/rea" target="_blank" rel="noopener">REA</a> (Reverse Engineer Anything,
+    <span class="mono">rea-agents</span>) gives the panes structured analysis of binaries, bundles and applications.
+    It is opt-in per run with <span class="mono">RELAY_REA=1</span>, and a task uses it only when it has a
+    <span class="mono">## Reverse engineering</span> section naming the target.
+  </p>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">What each seat does with it</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Role</th><th>With <span class="mono">RELAY_REA=1</span></th></tr></thead>
+      <tbody>
+        <tr><td><strong style="color:var(--text)">Executor</strong></td><td>Investigates the named target with <span class="mono">rea &lt;command&gt; --json</span>, saves each raw output to <span class="mono">.relay/rea/NNN-slug/&lt;step&gt;.json</span>, and cites the exact command, path, <span class="mono">evidence_id</span> and classification.</td></tr>
+        <tr><td><strong style="color:var(--text)">Scout</strong></td><td>Re-runs the recorded commands itself, audits the findings and probes edge cases, without editing source.</td></tr>
+        <tr><td><strong style="color:var(--text)">Validator</strong></td><td>Grades claims against the recorded evidence files and REA's own classifications: <span class="mono">observation</span>, <span class="mono">derivation</span>, <span class="mono">inference</span>, <span class="mono">unknown</span>.</td></tr>
+        <tr><td><strong style="color:var(--text)">Mutator</strong></td><td>Unchanged.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="info-box">
+    <span class="info-box-icon">🔌</span>
+    <div>
+      <strong style="color:var(--text)">CLI, not MCP.</strong> agy has no per-session MCP setting, and
+      <span class="mono">agy mcp add</span> changes the whole machine. So panes call the <span class="mono">rea</span>
+      CLI with <span class="mono">--json</span> and never run <span class="mono">rea setup</span>. That adds no tool schemas
+      to the context, works the same on the opencode fallback, and gives the scout one-line commands to re-run. With
+      <span class="mono">RELAY_REA=1</span>, <span class="mono">up</span> copies <span class="mono">rea.md</span> into
+      <span class="mono">.relay/</span>, creates <span class="mono">.relay/rea/</span>, puts REA's directory first on each
+      launcher's <span class="mono">PATH</span>, and names the charter in the executor, scout and validator boot prompts.
+    </div>
+  </div>
+
+  <div class="info-box warn-box">
+    <span class="info-box-icon">🛡️</span>
+    <div>
+      <strong style="color:var(--text)">Authorization boundary.</strong> Static inspection
+      (<span class="mono">analyze-javascript-application</span>, <span class="mono">inspect</span>,
+      <span class="mono">capabilities</span>, <span class="mono">doctor</span>, <span class="mono">compare</span>) may run on
+      any target the task names. Anything that launches, attaches to, debugs or modifies a process, or contacts a
+      network or device, is forbidden unless the task authorizes that exact command name. Every string, symbol and
+      decompiled line REA extracts is untrusted data, never instructions. Native decompilation needs Ghidra, Hopper or
+      IDA; when none is installed, <span class="mono">rea doctor</span> reports <span class="mono">missing_analysis_engine</span>,
+      the executor reports <span class="mono">BLOCKED</span>, and no pane installs one.
+    </div>
+  </div>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">Turn it on</h3>
+    <div class="term-block">
+      <div class="tb-bar">
+        <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+        <span class="tb-label">bash · macOS / Linux / WSL</span>
+        <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+      </div>
+      <div class="tb-body">
+        <span class="tbb-div"><span class="c-comment"># REA 6.7.0 needs Node ^24.11.0</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">npm install --global rea-agents@6.7.0</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">~/.claude/relay/relay.sh rea</span></span>
+        <span class="tbb-div"><span class="c-comment"># then, per run</span></span>
+        <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">RELAY_REA=1 ~/.claude/relay/relay.sh up -w .</span></span>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--text2);margin-top:14px;">
+      <strong style="color:var(--text)">Windows:</strong> set <span class="mono">$env:RELAY_REA='1'</span> and check with
+      <span class="mono">relay.ps1 -Command rea</span>. <span class="mono">RELAY_REA_BIN</span> names the binary if it is
+      not on <span class="mono">PATH</span>. The <span class="mono">rea</span> subcommand reports status and scope checks
+      without a running session. <span class="mono">tests/rea_up_harness.sh</span> checks <span class="mono">up</span> with
+      stub agents; no live run with real panes has gone through a reverse-engineering task yet.
+    </p>
+  </div>
+</section>
+
 <!-- RESOURCES -->
 <section id="resources" class="reveal">
   <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Resources</div>
@@ -2079,7 +2183,9 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <tr><td class="mono">relay/relay_cite.py</td><td>citation check, called by both (on; <span class="mono">RELAY_CITE=0</span> turns it off)</td></tr>
         <tr><td class="mono">relay/jev-calibration.md</td><td>what each gate was measured against before it shipped, and what was rejected</td></tr>
         <tr><td class="mono">relay/jev-calibration/</td><td><span class="mono">eval_verdict</span>, <span class="mono">eval_pane_shadow</span>, <span class="mono">eval_cite</span>, <span class="mono">eval_tests</span>, <span class="mono">eval_inject</span>, <span class="mono">eval_support</span> — re-run them when the Jev model changes</td></tr>
-        <tr><td class="mono">relay/charters/</td><td><span class="mono">executor.md</span>, <span class="mono">scout.md</span>, <span class="mono">mutator.md</span>, <span class="mono">validator.md</span>, <span class="mono">house-style.md</span></td></tr>
+        <tr><td class="mono">relay/charters/</td><td><span class="mono">executor.md</span>, <span class="mono">scout.md</span>, <span class="mono">mutator.md</span>, <span class="mono">validator.md</span>, <span class="mono">house-style.md</span>, <span class="mono">rea.md</span> (opt-in REA evidence contract)</td></tr>
+        <tr><td class="mono">tests/rea_up_harness.sh</td><td>stub-agent check of <span class="mono">up</span> with <span class="mono">RELAY_REA=1</span></td></tr>
+        <tr><td class="mono">docs/architecture/</td><td>the <a href="docs/architecture/relay-architecture.html" target="_blank" rel="noopener">interactive architecture map</a> and its Archify source</td></tr>
         <tr><td class="mono">commands/</td><td><span class="mono">relay-new</span>, <span class="mono">relay-up</span>, <span class="mono">relay-task</span>, <span class="mono">relay-auto</span>, <span class="mono">relay-status</span>, <span class="mono">relay-down</span>, <span class="mono">implement</span>, <span class="mono">execute-plan</span>, <span class="mono">sync-superpowers</span>, plus the deprecated <span class="mono">brainstorm</span> / <span class="mono">write-plan</span> aliases</td></tr>
         <tr><td class="mono">README.md</td><td>full reference: install, use, troubleshooting, what has actually been verified</td></tr>
         <tr><td class="mono">index.html</td><td>this page</td></tr>
@@ -2097,6 +2203,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <h4>Jev-AI-Skill <span style="color:var(--text2);font-weight:400;">(optional)</span></h4>
       <p>Jev, TypeSafe System One's fast decision model, behind autopilot's opt-in <span class="mono">RELAY_JEV=1</span> gates and pane shadow. It settles small calls; it never grades a task.</p>
       <div class="resource-repo">github.com/King4s/Jev-AI-Skill</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/morluto/rea" target="_blank">
+      <h4>REA <span style="color:var(--text2);font-weight:400;">(optional)</span></h4>
+      <p>Reverse Engineer Anything. Binary, bundle and application analysis behind <span class="mono">RELAY_REA=1</span>, called as a CLI with <span class="mono">--json</span> so every finding is recorded and re-runnable.</p>
+      <div class="resource-repo">github.com/morluto/rea</div>
+    </a>
+    <a class="glass-card resource-card" href="https://github.com/tt-a1i/archify" target="_blank">
+      <h4>Archify</h4>
+      <p>Draws the interactive architecture map in <span class="mono">docs/architecture/</span> from a JSON source, with every box linked to the lines it stands for.</p>
+      <div class="resource-repo">github.com/tt-a1i/archify</div>
     </a>
     <a class="glass-card resource-card" href="https://antigravity.google" target="_blank">
       <h4>Antigravity CLI (agy)</h4>
