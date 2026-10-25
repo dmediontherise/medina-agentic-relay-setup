@@ -1,1 +1,3 @@
 __pycache__/
+# Relay file bus: per-workspace runtime state, never source.
+.relay/

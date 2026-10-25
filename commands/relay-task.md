@@ -27,6 +27,11 @@ Pick the next id `NNN` (zero-padded, after the highest in `.relay/tasks/`) and w
 - In: <files/areas the executor may touch>
 - Out: <explicitly off-limits>
 
+## Reverse engineering (optional, opt-in with RELAY_REA=1)
+- Target: <exact path to binary, bundle, or directory>
+- Authorized extra commands: <comma-separated list of restricted commands, e.g. capture-process, or none>
+- Required provider: <e.g. none, hopper, ghidra, ida>
+
 ## Requirements
 1. <numbered, individually verifiable>
 
@@ -102,6 +107,14 @@ If you find yourself writing per-agent instructions into a task file at all, tha
 signal a charter is wrong, not that this task is special. Fix the charter in
 `~/.claude/relay/charters/` — task-level patches do not survive to the next task, which is
 how the same contradiction got hand-patched twice.
+
+**4. When a task requires reverse engineering, include `## Reverse engineering`.**
+
+Add the optional block specifying the explicit target path, any extra operations authorized
+beyond the default read-only set (such as runtime process capture or network tracing), and
+any required disassembler engine. Include it only when reverse engineering is in scope, and
+the target must be an application, binary, or bundle the user owns or is authorized to examine.
+Panes never select their own targets or run unauthorized active/network commands.
 
 **Resolve intent-level ambiguity with the user before writing this file — not after a
 cycle fails.** Every agent downstream has its own escalation path for ambiguity it

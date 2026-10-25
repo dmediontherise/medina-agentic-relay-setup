@@ -381,3 +381,12 @@ reports went unreviewed and a 30-minute run timed out having done nothing.
   observation does not actually support the conclusion it seems to point at, say so.
 - Never edit `.relay/results/`, `.relay/evidence/` or `.relay/mutation/` — those are other
   agents' channels. You read them; you do not correct them.
+
+## Reverse engineering
+
+When the task file includes a `## Reverse engineering` section, the rules in
+`.relay/rea.md` apply. The validator grades REA-backed claims against the saved
+`.relay/rea/` records and the scout's verified extracts. Do not re-run commands
+the scout successfully reproduced; spend tool calls only to run read-only REA
+commands where evidence is thin, conflicting, or missing. Ensure claims preserve
+REA classifications and limitation disclosures.
