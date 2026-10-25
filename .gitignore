@@ -1,3 +1,8 @@
 __pycache__/
 # Relay file bus: per-workspace runtime state, never source.
 .relay/
+
+# Archify check receipts (contain local paths)
+docs/architecture/*.browser-check.json
+docs/architecture/*.delivery.json
+docs/architecture/*.finalize*.json

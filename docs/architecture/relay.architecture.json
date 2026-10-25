@@ -1,0 +1,501 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Medina Agentic Relay",
+    "output": "docs/architecture/relay-architecture.html",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/dmediontherise/medina-agentic-relay-setup.git",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "10974bf195be27ae9b2acb3f2c288525a14d9c80"
+    }
+  },
+  "components": [
+    {
+      "id": "orchestrator",
+      "type": "external",
+      "label": "Orchestrator",
+      "sublabel": "Claude Opus session",
+      "pos": [
+        40,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "commands/implement.md",
+          "line": 40,
+          "end_line": 69,
+          "label": "writes task files"
+        }
+      ]
+    },
+    {
+      "id": "tasks",
+      "type": "database",
+      "label": "Task queue",
+      "sublabel": ".relay/tasks/",
+      "pos": [
+        245,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 1613,
+          "end_line": 1640,
+          "label": "pending_tasks"
+        }
+      ]
+    },
+    {
+      "id": "autopilot",
+      "type": "backend",
+      "label": "Autopilot",
+      "sublabel": "relay.sh / relay.ps1",
+      "tag": "self-heals panes",
+      "pos": [
+        450,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 2128,
+          "end_line": 2200,
+          "label": "cmd_autopilot"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 1799,
+          "end_line": 1857,
+          "label": "assert_agent_ready"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 1209,
+          "end_line": 1215,
+          "label": "restart re-reads state"
+        }
+      ]
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "Executor",
+      "sublabel": "agy · Gemini Flash",
+      "tag": "opencode on quota",
+      "pos": [
+        655,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 926,
+          "label": "agy launcher"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 950,
+          "label": "opencode launcher"
+        },
+        {
+          "path": "relay/charters/executor.md",
+          "line": 1,
+          "end_line": 5,
+          "label": "charter"
+        }
+      ]
+    },
+    {
+      "id": "scout",
+      "type": "backend",
+      "label": "Scout",
+      "sublabel": "agy · observes only",
+      "tag": "opencode on quota",
+      "pos": [
+        860,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 934,
+          "label": "agy launcher"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 2545,
+          "label": "evidence phase"
+        },
+        {
+          "path": "relay/charters/scout.md",
+          "line": 1,
+          "end_line": 5,
+          "label": "charter"
+        }
+      ]
+    },
+    {
+      "id": "validator",
+      "type": "security",
+      "label": "Validator",
+      "sublabel": "Claude Sonnet 5.5",
+      "tag": "only paid seat",
+      "pos": [
+        1065,
+        200
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 933,
+          "label": "claude launcher"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 2604,
+          "label": "grade phase"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 2646,
+          "end_line": 2659,
+          "label": "FAIL follow-up"
+        }
+      ]
+    },
+    {
+      "id": "mutator",
+      "type": "backend",
+      "label": "Mutator",
+      "sublabel": "agy · isolated snapshot",
+      "tag": "opencode on quota",
+      "pos": [
+        655,
+        370
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 935,
+          "label": "agy launcher"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 2513,
+          "end_line": 2524,
+          "label": "snapshot + dispatch"
+        },
+        {
+          "path": "relay/charters/mutator.md",
+          "line": 1,
+          "end_line": 5,
+          "label": "charter"
+        }
+      ]
+    },
+    {
+      "id": "cite",
+      "type": "security",
+      "label": "Citation check",
+      "sublabel": "relay_cite.py",
+      "tag": "bounces once",
+      "pos": [
+        450,
+        370
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 1607,
+          "end_line": 1608,
+          "label": "cite_gate"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 2458,
+          "label": "after each result"
+        },
+        {
+          "path": "relay/relay_cite.py",
+          "line": 561,
+          "end_line": 578,
+          "label": "entry point"
+        }
+      ]
+    },
+    {
+      "id": "jev",
+      "type": "cloud",
+      "label": "Jev gates",
+      "sublabel": "relay_jev.py · TypeSafe",
+      "tag": "opt-in",
+      "pos": [
+        450,
+        40
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/relay.sh",
+          "line": 1594,
+          "end_line": 1595,
+          "label": "jev_gate"
+        },
+        {
+          "path": "relay/relay_jev.py",
+          "line": 357,
+          "end_line": 391,
+          "label": "gate subcommands"
+        }
+      ]
+    },
+    {
+      "id": "rea",
+      "type": "external",
+      "label": "REA CLI",
+      "sublabel": "rea --json evidence",
+      "tag": "opt-in · new",
+      "pos": [
+        860,
+        40
+      ],
+      "size": [
+        130,
+        64
+      ],
+      "sources": [
+        {
+          "path": "relay/charters/rea.md",
+          "line": 1,
+          "end_line": 5,
+          "label": "evidence contract"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 796,
+          "end_line": 798,
+          "label": "up copies charter"
+        },
+        {
+          "path": "relay/relay.sh",
+          "line": 885,
+          "end_line": 887,
+          "label": "launcher PATH"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "tmux / psmux session",
+      "wraps": [
+        "executor",
+        "scout",
+        "validator",
+        "mutator"
+      ],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "spec",
+      "from": "orchestrator",
+      "to": "tasks",
+      "label": "writes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "poll",
+      "from": "tasks",
+      "to": "autopilot",
+      "label": "next",
+      "variant": "emphasis"
+    },
+    {
+      "id": "dispatch",
+      "from": "autopilot",
+      "to": "executor",
+      "label": "dispatch",
+      "variant": "emphasis"
+    },
+    {
+      "id": "result",
+      "from": "executor",
+      "to": "scout",
+      "label": "result",
+      "variant": "emphasis"
+    },
+    {
+      "id": "evidence",
+      "from": "scout",
+      "to": "validator",
+      "label": "evidence",
+      "variant": "emphasis"
+    },
+    {
+      "id": "jev-ask",
+      "from": "autopilot",
+      "to": "jev",
+      "label": "RELAY_JEV=1",
+      "variant": "dashed"
+    },
+    {
+      "id": "cite-run",
+      "from": "autopilot",
+      "to": "cite",
+      "label": "after result",
+      "variant": "security"
+    },
+    {
+      "id": "snapshot",
+      "from": "executor",
+      "to": "mutator",
+      "label": "snapshot",
+      "variant": "dashed"
+    },
+    {
+      "id": "mutation-report",
+      "from": "mutator",
+      "to": "validator",
+      "label": "survivors",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1130,
+          402
+        ]
+      ]
+    },
+    {
+      "id": "rea-exec",
+      "from": "executor",
+      "to": "rea",
+      "label": "runs",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          720,
+          72
+        ]
+      ]
+    },
+    {
+      "id": "rea-scout",
+      "from": "scout",
+      "to": "rea",
+      "label": "re-runs",
+      "variant": "dashed"
+    },
+    {
+      "id": "rea-val",
+      "from": "validator",
+      "to": "rea",
+      "label": "reads",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "right",
+      "via": [
+        [
+          1130,
+          72
+        ]
+      ]
+    },
+    {
+      "id": "follow-up",
+      "from": "validator",
+      "to": "tasks",
+      "label": "FAIL: follow-up task",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1245,
+          232
+        ],
+        [
+          1245,
+          470
+        ],
+        [
+          310,
+          470
+        ]
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "One task, end to end",
+      "items": [
+        "The orchestrator writes .relay/tasks/NNN-slug.md; autopilot drains the queue unattended",
+        "Each agent owns one channel on the file bus: results/, evidence/, mutation/, reports/",
+        "On FAIL the validator writes the follow-up task itself; repeated FAILs stop the run"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Free panes, one paid seat",
+      "items": [
+        "Executor, scout and mutator run on agy and fall back to opencode's free model when agy's quota runs out",
+        "Only the validator spends Claude quota, and it clears its context before every grade"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Recent changes (PRs #12–#14)",
+      "items": [
+        "#12: restarts re-read the state file, so a manual --provider switch survives a running autopilot",
+        "#13: relay.sh steps the cursor to Yes on Claude Code's folder-trust prompt instead of pressing Enter blind",
+        "#14: REA reverse-engineering evidence, opt-in with RELAY_REA=1, via the rea CLI"
+      ]
+    }
+  ]
+}
