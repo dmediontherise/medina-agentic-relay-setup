@@ -292,7 +292,8 @@ $script:RepaintSettleMs = if ($env:RELAY_REPAINT_SETTLE) {
 # Blocking prompts we know how to clear ourselves. Each is a modal that swallows
 # input, so a dispatched instruction is simply absorbed and never acted on.
 $script:ClearablePrompts = @(
-    @{ Pattern = 'trust (the contents of this|this folder)'; Key = 'Enter'; What = 'folder-trust prompt' },
+    # Key = $null: not a single keystroke - see Invoke-AcceptTrustPrompt.
+    @{ Pattern = 'trust (the contents of this|this folder)'; Key = $null; What = 'folder-trust prompt' },
     # agy periodically asks for CLI feedback. Seen sitting on a crashed scout pane
     # 2026-08-10; it blocks the input line exactly like the trust gate does.
     @{ Pattern = "How's the CLI experience so far"; Key = '0'; What = 'agy feedback survey' }
@@ -353,8 +354,21 @@ function Wait-PaneBooted($target, $timeoutSec = 90) {
     return $false
 }
 
+# psmux writes captures as UTF-8, but Windows PowerShell 5.1 decodes native output with
+# [Console]::OutputEncoding, which defaults to the OEM code page (IBM437 here). Every
+# non-ASCII glyph then arrives mangled - Claude Code's menu cursor U+276F came through as
+# three characters - so anything matched on a glyph never matched. Decode as UTF-8 for
+# the capture and put the console back afterwards. The encoding cannot be set without a
+# console attached; the capture then runs with whatever the host already uses.
+function Invoke-PsmuxCapture([string[]]$psmuxArgs) {
+    $prev = $null
+    try { $prev = [Console]::OutputEncoding; [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { $prev = $null }
+    try { return (psmux @psmuxArgs 2>$null) }
+    finally { if ($prev) { try { [Console]::OutputEncoding = $prev } catch {} } }
+}
+
 function Get-PaneText($target, $lines = 40) {
-    return (psmux capture-pane -t $target -p 2>$null | Select-Object -Last $lines | Out-String)
+    return (Invoke-PsmuxCapture @('capture-pane', '-t', $target, '-p') | Select-Object -Last $lines | Out-String)
 }
 
 # Same, but including scrollback. Kept separate from Get-PaneText on purpose: fault
@@ -362,7 +376,7 @@ function Get-PaneText($target, $lines = 40) {
 # match and condemn a pane that has since recovered. Only the responsiveness probe wants
 # history, because it is looking for one nonce it just generated.
 function Get-PaneScrollback($target, $lines = 120) {
-    return (psmux capture-pane -t $target -p -S -200 2>$null | Select-Object -Last $lines | Out-String)
+    return (Invoke-PsmuxCapture @('capture-pane', '-t', $target, '-p', '-S', '-200') | Select-Object -Last $lines | Out-String)
 }
 
 # Relay panes are tiled and therefore narrow, so any banner we match on may be
@@ -380,10 +394,42 @@ function Test-PaneMatch($txt, $pattern) {
     return $false
 }
 
+# Never press Enter on a trust prompt blind. Claude Code 2.1.296 opens its folder-trust
+# menu with the cursor on "No, exit" (Yes is second), so a bare Enter quits the
+# validator on every folder it has not seen before - observed 2026-10-12 on a fresh
+# clone. The menu also wraps, so a fixed number of Downs is no safer. Instead read
+# which line the cursor is on and step Down until it is the accepting option. If no
+# cursor line is recognisable (an older or different layout), fall back to Enter,
+# which is what every earlier version wanted. Port of relay.sh's accept_trust_prompt.
+# The cursor glyphs are built from code points because PowerShell 5.1 reads a file
+# without a BOM as ANSI, which would mangle them as literals.
+$script:MenuCursorPattern = '^\s*(' + [char]0x276F + '|' + [char]0x203A + '|>)\s'
+
+function Invoke-AcceptTrustPrompt($target) {
+    for ($i = 0; $i -lt 4; $i++) {
+        $sel = (Get-PaneText $target) -split '\r?\n' |
+            Where-Object { $_ -match $script:MenuCursorPattern } | Select-Object -Last 1
+        if (-not $sel -or $sel -match 'yes|trust') {
+            psmux send-keys -t $target Enter | Out-Null
+            return $true
+        }
+        psmux send-keys -t $target Down | Out-Null
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
 function Clear-BlockingPrompts($target) {
     $txt = Get-PaneText $target
     foreach ($p in $script:ClearablePrompts) {
         if (Test-PaneMatch $txt $p.Pattern) {
+            if ($null -eq $p.Key) {
+                # Same contract as relay.sh: a menu whose accepting line never came up
+                # under the cursor is left alone and reported as nothing cleared.
+                if (-not (Invoke-AcceptTrustPrompt $target)) { return $null }
+                Start-Sleep -Milliseconds $script:RepaintSettleMs
+                return $p.What
+            }
             psmux send-keys -t $target $p.Key | Out-Null
             Start-Sleep -Milliseconds $script:RepaintSettleMs
             return $p.What
