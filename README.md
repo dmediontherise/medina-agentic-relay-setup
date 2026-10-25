@@ -12,28 +12,12 @@ sub-second typed-decision model) settles the small calls that used to stop a run
 validator turn — see [Jev gates](#jev-gates-opt-in-bash-and-powershell).
 For binary and application analysis, see [Reverse engineering with REA](#reverse-engineering-with-rea).
 
+**Start here:** [The five roles](#the-five-roles) is the whole design in one table, and
+[Why the scout exists](#why-the-scout-exists) is the idea the rest of it is built around.
+To run it, go to [Install](#install) and [Use it](#use-it).
+
 The setup guide site lives in [`index.html`](index.html). The runnable control plane
 lives in [`relay/`](relay/).
-
----
-
-## What changed from the original design
-
-The first version of this project was a **one-way handoff**: Claude planned, fired a
-detached Gemini window, and never heard back. You found out whether it worked by reading
-the diff. Two things forced a rework:
-
-1. **Google retired "Sign in with Google" for Gemini CLI on 2026-06-18** for Gemini Code
-   Assist for individuals, Google AI Pro, and Google AI Ultra. The CLI fails with
-   *"This client is no longer supported for Gemini Code Assist for individuals."*
-   Updating the CLI does not help — the auth path is gone, not broken. Only Code Assist
-   **Standard/Enterprise** licenses still work over OAuth.
-2. A handoff with no return path has no verification step, so a confidently wrong result
-   looks exactly like a correct one.
-
-The executor is now **Antigravity CLI (`agy`)**, Google's successor, which signs in
-through the normal Google browser flow and needs no API key. And the handoff is now a
-loop with an independent verification chain.
 
 ---
 
@@ -218,6 +202,26 @@ the change, whatever the green suite says. The validator invented this check mid
 cycle 4 and it was the most valuable thing in the run; it was also shell work happening in
 the one seat this relay pays for, which is the inversion the whole design exists to avoid.
 It belongs to the free pane now.
+
+---
+
+## Background: what changed from the original design
+
+The first version of this project was a **one-way handoff**: Claude planned, fired a
+detached Gemini window, and never heard back. You found out whether it worked by reading
+the diff. Two things forced a rework:
+
+1. **Google retired "Sign in with Google" for Gemini CLI on 2026-06-18** for Gemini Code
+   Assist for individuals, Google AI Pro, and Google AI Ultra. The CLI fails with
+   *"This client is no longer supported for Gemini Code Assist for individuals."*
+   Updating the CLI does not help — the auth path is gone, not broken. Only Code Assist
+   **Standard/Enterprise** licenses still work over OAuth.
+2. A handoff with no return path has no verification step, so a confidently wrong result
+   looks exactly like a correct one.
+
+The executor is now **Antigravity CLI (`agy`)**, Google's successor, which signs in
+through the normal Google browser flow and needs no API key. And the handoff is now a
+loop with an independent verification chain.
 
 ---
 
