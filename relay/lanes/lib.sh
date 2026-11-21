@@ -66,3 +66,69 @@ lane_pending_ids() {
   awk '/^##[[:space:]]/ { t = ($0 ~ /^##[[:space:]]*Tasks/); next }
        t && /^- \[ \] / { r = substr($0, 7); split(r, w, " "); print w[1] }' "$1"
 }
+
+# <doc> [S-id...] -> those ## Specs bullets verbatim, with continuation lines. No ids
+# means every spec: a row that names none is graded against all of them.
+lane_spec_text() {
+  local doc="$1" want="*"; shift
+  [ $# -gt 0 ] && want=" $* "
+  WANT="$want" awk '
+    /^##[[:space:]]/ { sp = ($0 ~ /^##[[:space:]]*Specs/); cur = 0; next }
+    !sp { next }
+    /^- (\*\*)?S[0-9]+/ {
+      id = $2; gsub(/[^A-Za-z0-9]/, "", id)
+      cur = (ENVIRON["WANT"] == "*" || index(ENVIRON["WANT"], " " id " ") > 0)
+    }
+    cur { print }' "$doc"
+}
+
+# <doc> -> everything before the first ## heading (title, Objective, Runner, Branch...)
+lane_doc_header() { sed -n '1,/^## /p' "$1" | sed '$d'; }
+
+# <doc> -> the first backticked command after "Runner:" in the header, or nothing
+lane_doc_runner() { lane_doc_header "$1" | sed -nE 's/.*Runner:[^`]*`([^`]+)`.*/\1/p' | head -n 1; }
+
+# <row> <mark> [commit] -> the row with its checkbox mark set and, when given, commit: set
+lane_row_with() {
+  local row="$1" mark="$2" commit="${3:-}"
+  row="- [$mark]${row:5}"
+  if [ -n "$commit" ]; then
+    if printf '%s' "$row" | grep -q 'commit:'; then
+      row="$(printf '%s' "$row" | sed -E "s/commit:[^;)]*/commit: $commit/")"
+    elif [ "${row%)}" != "$row" ]; then
+      row="${row%)}; commit: $commit)"
+    else
+      row="$row (commit: $commit)"
+    fi
+  fi
+  printf '%s' "$row"
+}
+
+# <doc> <id> <new-line>: replace that Tasks row in place
+lane_doc_replace_row() {
+  local tmp="$1.lanes.tmp"
+  NEWROW="$3" awk -v id="$2" '
+    /^##[[:space:]]/ { t = ($0 ~ /^##[[:space:]]*Tasks/) }
+    t && !done && /^- \[.\] / { r = substr($0, 7); split(r, w, " ")
+      if (w[1] == id) { print ENVIRON["NEWROW"]; done = 1; next } }
+    { print }' "$1" > "$tmp" && mv "$tmp" "$1"
+}
+
+# <doc> <id> <new-line>: insert a Tasks row directly after row <id>
+lane_doc_insert_after() {
+  local tmp="$1.lanes.tmp"
+  NEWROW="$3" awk -v id="$2" '
+    { print }
+    /^##[[:space:]]/ { t = ($0 ~ /^##[[:space:]]*Tasks/); next }
+    t && !done && /^- \[.\] / { r = substr($0, 7); split(r, w, " ")
+      if (w[1] == id) { print ENVIRON["NEWROW"]; done = 1 } }' "$1" > "$tmp" && mv "$tmp" "$1"
+}
+
+# <doc> <text>: append "- L<n> <text>" to ## Log (ODD keeps Log last, so append = end of file)
+lane_doc_log() {
+  local doc="$1" n
+  n="$(sed -nE 's/^(- )?(\*\*)?L([0-9]+).*/\3/p' "$doc" | sort -n | tail -n 1)"
+  n=$(( ${n:-0} + 1 ))
+  grep -q '^## Log' "$doc" || printf '\n## Log\n\n' >> "$doc"
+  printf -- '- L%s %s\n' "$n" "$2" >> "$doc"
+}
