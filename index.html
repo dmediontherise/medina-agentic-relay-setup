@@ -700,6 +700,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <div class="nav-section">
       <div class="nav-section-label">Installation</div>
       <a href="#install" class="nav-link"><span class="nav-icon">⊞</span>Win · Mac · Linux</a>
+      <a href="#lanes" class="nav-link"><span class="nav-icon">≡</span>Lanes (gentle-ai)</a>
     </div>
     <div class="nav-section">
       <div class="nav-section-label">Reference</div>
@@ -777,6 +778,16 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     not verify it, the agents that gather the evidence (a scout that observes, a mutator that tries to break it) do not grade it,
     and the agent that grades it never touches the code. Every step lands a durable artifact on disk.
   </p>
+  <div class="info-box" style="margin-top:16px;">
+    <span class="info-box-icon">≡</span>
+    <div>
+      <strong style="color:var(--text)">On WSL/Linux, the default since 2026-11-21 is <a href="#lanes">lanes</a>.</strong>
+      Your Claude Code session runs <a href="https://github.com/Gentleman-Programming/gentle-ai" target="_blank" rel="noopener">gentle-ai</a>'s
+      ODD workflow and does most of the work itself. <span class="mono">lanes.sh</span> starts an agent only when there is a named
+      reason to delegate, and the full scout and validator chain runs only for high-risk changes. The four-pane relay described
+      below is still installed, and it is the fallback and the Windows path.
+    </div>
+  </div>
 
   <!-- Interactive relay preview -->
   <div id="relay-preview" class="relay-wrap">
@@ -786,15 +797,15 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <span class="rn-expand">+</span>
         <div class="rn-model">Claude Code</div>
         <div class="rn-stage">Ideate &amp; Plan</div>
-        <div class="rn-desc">Brainstorm, spec out, write the plan</div>
+        <div class="rn-desc">ODD: specs and task rows in one feature doc</div>
         <div class="rn-tags">
-          <span class="rn-tag">brainstorming</span>
-          <span class="rn-tag">writing-plans</span>
+          <span class="rn-tag">gentle-ai ODD</span>
+          <span class="rn-tag">Engram</span>
           <span class="rn-tag">worktrees</span>
         </div>
         <div class="rn-detail">
           <div class="rn-detail-inner">
-            Claude runs the full superpowers design loop: collaborative brainstorming → approved spec → step-by-step implementation plan with exact file paths and test commands.
+            Claude runs gentle-ai's Organic Driven Development: it quotes your request as numbered specs (S1, S2, …) and writes task rows with a route, a risk and an <span class="mono">In:</span> scope to <span class="mono">odd/tasks/&lt;feature&gt;.md</span>. Engram keeps memory across sessions. This replaced the superpowers brainstorming → writing-plans loop on 2026-11-21.
           </div>
         </div>
       </div>
@@ -1601,11 +1612,73 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </div>
 </section>
 
+<!-- LANES -->
+<section id="lanes" class="reveal">
+  <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Installation</div>
+  <h2>Lanes: the relay as a <span class="gradient-text">gentle-ai</span> backend</h2>
+  <p>
+    Fixed pipelines make small tasks slow. In lanes mode, the Claude Code session plans with gentle-ai's ODD and does most
+    work inline. <span class="mono">~/.claude/relay/lanes.sh</span> starts one headless agent turn, in a tmux window you can
+    watch (session <span class="mono">lanes</span>), only for a named reason. WSL/Linux only for now: <span class="mono">relay.ps1</span>
+    stays on the four-pane relay.
+  </p>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">The lanes</h3>
+    <table class="glass-table" style="margin-top:0;">
+      <thead><tr><th>Lane</th><th>Runs</th><th>Use it when</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">explore</td><td>agy, read-only → <span class="mono">map.md</span></td><td>Understanding the task needs more than a few inline lookups</td></tr>
+        <tr><td class="mono">write</td><td>agy writer inside the row's <span class="mono">In:</span> → <span class="mono">result.md</span></td><td>Independent units with disjoint scopes, each several minutes of work</td></tr>
+        <tr><td class="mono">prebrief</td><td>agy scout in a sandbox that holds only the specs → <span class="mono">prebrief.md</span></td><td>Before the code for a high-risk row exists</td></tr>
+        <tr><td class="mono">verify</td><td>prebrief → agy evidence → Sonnet verdict → <span class="mono">verdict.md</span></td><td>The row names a high-risk item: data, security, contracts, concurrency, delivery, or no test that would catch a regression</td></tr>
+        <tr><td class="mono">autopilot</td><td>all of the above, plus headless Claude for <span class="mono">inline</span> rows</td><td>Draining a feature doc unattended (<span class="mono">/implement</span>)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="term-block">
+    <div class="tb-bar">
+      <div class="tb-dots"><span class="d-r"></span><span class="d-y"></span><span class="d-g"></span></div>
+      <span class="tb-label">bash (WSL/Linux): install gentle-ai, retire overlapping skills, install lanes</span>
+      <button class="tb-copy" onclick="copyTB(this)">Copy</button>
+    </div>
+    <div class="tb-body">
+      <span class="tbb-div"><span class="c-comment"># back up ~/.claude, ~/.claude.json, ~/.gemini, ~/.config/opencode first</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">curl -fsSLo install.sh https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh &amp;&amp; less install.sh</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">bash install.sh --method binary --dir "$HOME/.local/bin"</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">gentle-ai install --agents claude-code,antigravity,opencode --preset ecosystem-only --persona neutral --dry-run</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">gentle-ai install --agents claude-code,antigravity,opencode --preset ecosystem-only --persona neutral</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">gentle-ai telemetry disable</span>   <span class="c-comment"># optional; on by default</span></span>
+      <span class="tbb-div"><span class="c-comment"># retire the five superpowers skills ODD replaces (moved, not deleted)</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">mkdir -p ~/.claude/skills-retired &amp;&amp; for s in using-superpowers brainstorming writing-plans executing-plans subagent-driven-development; do mv ~/.claude/skills/$s ~/.claude/skills-retired/ 2&gt;/dev/null; done</span></span>
+      <span class="tbb-div"><span class="c-prompt">$</span> <span class="c-cmd">bash relay/install-lanes.sh &amp;&amp; ~/.claude/relay/lanes.sh doctor</span></span>
+      <span class="tbb-div"><span class="c-comment"># then start a NEW Claude Code session so the ODD rules, Engram and hooks load</span></span>
+    </div>
+  </div>
+
+  <div class="glass-card" style="padding:24px;margin:24px 0;">
+    <h3 style="margin-bottom:16px;font-size:16px;color:var(--text2);font-weight:500;">A task row</h3>
+    <p style="margin-bottom:12px;">ODD writes <span class="mono">odd/tasks/&lt;feature&gt;.md</span>: a header with <span class="mono">Objective:</span> and <span class="mono">Runner:</span> (the test command autopilot trusts), <span class="mono">## Specs</span>, <span class="mono">## Tasks</span> and <span class="mono">## Log</span>. Lanes reads these keys:</p>
+    <div class="mono" style="display:block;white-space:pre-wrap;overflow-wrap:anywhere;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);">- [ ] T2 S3,S4 Report unreadable files (route: inline; risk: high(contracts); In: wc.py tests/test_errors.py; after: T1; commit: pending)</div>
+    <p style="margin-top:12px;">
+      Autopilot commits each row itself and checks it off only on observed proof: the <span class="mono">Runner:</span> passing for a
+      low-risk row, or a PASS verdict for a high-risk one. A first failure adds a follow-up row. A second failure, a Claude usage
+      limit, or an open decision blocks the row and logs <span class="mono">Needs your decision</span> (exit 4). Out-of-scope edits are
+      reverted. agy falls back to opencode on quota exhaustion. <span class="mono">touch .relay/STOP</span> stops the run.
+    </p>
+  </div>
+</section>
+
 <!-- SKILLS -->
 <section id="skills" class="reveal">
   <div class="section-eyebrow"><span class="section-eyebrow-bar"></span>Reference</div>
   <h2>Skills</h2>
   <p>Skills are prompt-driven workflows that trigger automatically. Filter by category:</p>
+  <div class="info-box" style="margin-bottom:16px;">
+    <span class="info-box-icon">◎</span>
+    <span><strong style="color:var(--text)">Retired 2026-11-21:</strong> using-superpowers, brainstorming, writing-plans, executing-plans and subagent-driven-development. ODD replaces them. They were moved to <span class="mono">~/.claude/skills-retired/</span>, not deleted, and <span class="mono">/sync-superpowers</span> keeps them out.</span>
+  </div>
 
   <div class="skills-filter">
     <div class="filter-pill active" data-filter="all" onclick="filterSkills(this)">All</div>
@@ -1618,10 +1691,11 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
   </div>
 
   <div class="skills-grid">
-    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>brainstorming</h4><p>Collaborative design dialogue. Turns rough ideas into fully-formed specs before any code is written.</p><div class="sk-meta">triggers → new feature requests</div></div>
-    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>writing-plans</h4><p>Converts an approved spec into a step-by-step implementation plan with exact paths, test commands, and commits.</p><div class="sk-meta">triggers → after brainstorming approval</div></div>
-    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>subagent-driven-development</h4><p>Executes a plan with a fresh subagent per task. Two-stage review (spec compliance + code quality) after each task.</p><div class="sk-meta">best for → most implementation work</div></div>
-    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>executing-plans</h4><p>Executes a plan inline with review checkpoints. Fallback when subagent dispatch isn't available.</p><div class="sk-meta">best for → sequential tasks</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>ODD orchestrator (gentle-ai)</h4><p>Organic Driven Development, installed into <span class="mono">~/.claude/CLAUDE.md</span>. Works inline by default and keeps specs, task rows and a log in <span class="mono">odd/tasks/&lt;feature&gt;.md</span>.</p><div class="sk-meta">always on → every session</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>work-unit-commits</h4><p>gentle-ai. Plans commits as reviewable work units, keeping tests and docs with the code they cover.</p><div class="sk-meta">triggers → commit splitting</div></div>
+    <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>chained-pr</h4><p>gentle-ai. Splits changes over 400 lines into stacked PRs, so each review stays focused.</p><div class="sk-meta">triggers → oversized PRs</div></div>
+    <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>judgment-day</h4><p>gentle-ai. Blind dual adversarial review, with at most two scoped rounds of fixes and re-judgment.</p><div class="sk-meta">triggers → "judgment day", dual review</div></div>
+    <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>skill-registry</h4><p>gentle-ai. Indexes the available skills by trigger and path, and is refreshed by a hook on every prompt.</p><div class="sk-meta">automatic → UserPromptSubmit hook</div></div>
     <div class="glass-card skill-card" data-cat="workflow"><span class="sk-badge sk-workflow">Workflow</span><h4>dispatching-parallel-agents</h4><p>Launches multiple independent subagents simultaneously. Speeds up work with no shared state or sequential dependencies.</p><div class="sk-meta">best for → 2+ independent tasks</div></div>
     <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>test-driven-development</h4><p>Enforces red/green TDD. Write failing test → confirm it fails → write minimal code → confirm it passes → commit.</p><div class="sk-meta">triggers → any implementation task</div></div>
     <div class="glass-card skill-card" data-cat="quality"><span class="sk-badge sk-quality">Quality</span><h4>verification-before-completion</h4><p>Runs a verification checklist before claiming any task is done. Prevents saying "done" without confirming output.</p><div class="sk-meta">triggers → before completion claims</div></div>
@@ -1631,7 +1705,6 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>receiving-code-review</h4><p>Handles review feedback with rigor. Verifies technical claims before agreeing, asks for clarification on vague notes.</p><div class="sk-meta">triggers → on review feedback received</div></div>
     <div class="glass-card skill-card" data-cat="review"><span class="sk-badge sk-review">Review</span><h4>finishing-a-development-branch</h4><p>Guides branch completion. Presents structured options: direct merge, PR, or cleanup. Verifies tests before any action.</p><div class="sk-meta">triggers → when implementation complete</div></div>
     <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>using-git-worktrees</h4><p>Creates isolated git worktrees for feature work. Smart directory selection and safety verification before any changes.</p><div class="sk-meta">triggers → new feature branches</div></div>
-    <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>using-superpowers</h4><p>Framework entry point and skill discovery hub. Loads every conversation to ensure the right skill fires at the right time.</p><div class="sk-meta">triggers → every conversation start</div></div>
     <div class="glass-card skill-card" data-cat="setup"><span class="sk-badge sk-setup">Setup</span><h4>writing-skills</h4><p>Meta-skill for creating new reusable skills. When a recurring pattern emerges, use this to codify it permanently.</p><div class="sk-meta">triggers → new skill creation requests</div></div>
     <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>update-config</h4><p>Configures Claude Code via settings.json. Sets up automated hooks for recurring behaviors ("from now on when X").</p><div class="sk-meta">triggers → config change requests</div></div>
     <div class="glass-card skill-card" data-cat="utility"><span class="sk-badge sk-utility">Utility</span><h4>keybindings-help</h4><p>Customizes keyboard shortcuts in Claude Code. Add chord shortcuts, rebind any action, change the submit key.</p><div class="sk-meta">triggers → keybinding requests</div></div>
@@ -1751,16 +1824,15 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
     </thead>
     <tbody>
       <tr><td class="mono">/skills</td><td>Opens the skills browser — all available skills and descriptions</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/sync-superpowers</td><td>Pulls the latest superpowers from GitHub, refreshes all local skills</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/sync-superpowers</td><td>Pulls the latest superpowers from GitHub and refreshes local skills, keeping the five retired ones out</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/commit</td><td>Creates a git commit with a generated message. Respects hooks and sign-off</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/update-config</td><td>Opens the config skill to modify settings.json and configure automated hooks</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/brainstorm</td><td>Triggers design dialogue for a new feature or idea</td><td><span class="status-badge st-dep">→ brainstorming skill</span></td></tr>
-      <tr><td class="mono">/write-plan</td><td>Creates an implementation plan from a spec</td><td><span class="status-badge st-dep">→ writing-plans skill</span></td></tr>
-      <tr><td class="mono">/implement</td><td>Turns the latest plan into task files and hands them to autopilot — agy executes, scouts and mutates, Sonnet validates, unattended</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/execute-plan</td><td>Executes a previously written plan (redirected to /implement handoff)</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/lane</td><td>Runs one lane (explore, write, prebrief, verify) on an ODD task row, for a named delegation reason. Prints <span class="mono">LANE &lt;lane&gt; &lt;status&gt; &lt;run-dir&gt;</span></td><td><span class="status-badge st-active">Active · lanes</span></td></tr>
+      <tr><td class="mono">/implement</td><td>Drains an ODD feature document's <span class="mono">## Tasks</span> unattended with <span class="mono">lanes.sh autopilot</span>. It commits one row at a time, on observed proof only</td><td><span class="status-badge st-active">Active · lanes</span></td></tr>
+      <tr><td class="mono">/execute-plan</td><td>Alias for /implement</td><td><span class="status-badge st-active">Active · lanes</span></td></tr>
       <tr><td class="mono">/relay-new</td><td>Scaffolds a new project (git init, .gitignore, seed task) and brings the relay up on it</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-up</td><td>Brings up the psmux/tmux relay on an existing project — executor, scout, mutator and validator panes</td><td><span class="status-badge st-active">Active</span></td></tr>
-      <tr><td class="mono">/relay-auto</td><td>Runs the whole queue unattended: autopilot drives every pending task through execute → scout → validate until it drains</td><td><span class="status-badge st-active">Active</span></td></tr>
+      <tr><td class="mono">/relay-auto</td><td>Alias for /implement on WSL/Linux. The legacy four-pane queue runs with <span class="mono">relay.sh autopilot</span></td><td><span class="status-badge st-active">Active · lanes</span></td></tr>
       <tr><td class="mono">/relay-task</td><td>Runs a full cycle: executor implements, scout gathers evidence, validator grades</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-status</td><td>Session health, pane state, and what is on the file bus</td><td><span class="status-badge st-active">Active</span></td></tr>
       <tr><td class="mono">/relay-down</td><td>Tears the relay session down</td><td><span class="status-badge st-active">Active</span></td></tr>
@@ -1788,7 +1860,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
 
   <div class="info-box" style="margin-top:20px;">
     <span class="info-box-icon">◎</span>
-    <span>Use tasks for any operation with 3+ distinct steps. The brainstorming and subagent-driven-development skills create and update tasks automatically.</span>
+    <span>Use tasks for any operation with 3+ distinct steps. In lanes mode, the durable task list is the <span class="mono">## Tasks</span> section of the ODD feature document, which autopilot checks off with commit hashes.</span>
   </div>
 </section>
 
@@ -2177,7 +2249,9 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <thead><tr><th>Path</th><th>Is</th></tr></thead>
       <tbody>
         <tr><td class="mono">relay/relay.ps1</td><td>Windows / psmux control plane</td></tr>
-        <tr><td class="mono">relay/relay.sh</td><td>macOS / Linux / tmux control plane (bash 3.2+)</td></tr>
+        <tr><td class="mono">relay/relay.sh</td><td>macOS / Linux / tmux control plane (bash 3.2+), legacy four-pane mode</td></tr>
+        <tr><td class="mono">relay/lanes.sh</td><td>lanes: delegation backend for a gentle-ai ODD orchestrator, with helpers in <span class="mono">relay/lanes/</span> and installer <span class="mono">relay/install-lanes.sh</span></td></tr>
+        <tr><td class="mono">tests/lanes/</td><td>lanes suite on stub agents: <span class="mono">bash tests/lanes/run_all.sh</span></td></tr>
         <tr><td class="mono">relay/relay_jev.py</td><td>Jev gates helper, called by both (opt-in: <span class="mono">RELAY_JEV=1</span>)</td></tr>
         <tr><td class="mono">relay/relay_cite.py</td><td>citation check, called by both (on; <span class="mono">RELAY_CITE=0</span> turns it off)</td></tr>
         <tr><td class="mono">relay/jev-calibration.md</td><td>what each gate was measured against before it shipped, and what was rejected</td></tr>
@@ -2186,7 +2260,7 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
         <tr><td class="mono">tests/rea_up_harness.sh</td><td>stub-agent check of <span class="mono">up</span> with <span class="mono">RELAY_REA=1</span></td></tr>
         <tr><td class="mono">tests/ps1_trust_prompt_test.ps1</td><td><span class="mono">relay.ps1</span>'s folder-trust handling against a stand-in menu on real psmux (Windows)</td></tr>
         <tr><td class="mono">docs/architecture/</td><td>the <a href="docs/architecture/relay-architecture.html" target="_blank" rel="noopener">interactive architecture map</a> and its Archify source</td></tr>
-        <tr><td class="mono">commands/</td><td><span class="mono">relay-new</span>, <span class="mono">relay-up</span>, <span class="mono">relay-task</span>, <span class="mono">relay-auto</span>, <span class="mono">relay-status</span>, <span class="mono">relay-down</span>, <span class="mono">implement</span>, <span class="mono">execute-plan</span>, <span class="mono">sync-superpowers</span>, plus the deprecated <span class="mono">brainstorm</span> / <span class="mono">write-plan</span> aliases</td></tr>
+        <tr><td class="mono">commands/</td><td><span class="mono">relay-new</span>, <span class="mono">relay-up</span>, <span class="mono">relay-task</span>, <span class="mono">relay-auto</span>, <span class="mono">relay-status</span>, <span class="mono">relay-down</span>, <span class="mono">implement</span>, <span class="mono">execute-plan</span>, <span class="mono">sync-superpowers</span>, and <span class="mono">lane</span> (lanes mode)</td></tr>
         <tr><td class="mono">README.md</td><td>full reference: install, use, troubleshooting, what has actually been verified</td></tr>
         <tr><td class="mono">index.html</td><td>this page</td></tr>
       </tbody>
@@ -2219,9 +2293,14 @@ p{font-size:15px;color:var(--text2);line-height:1.7;margin-bottom:14px;}
       <p>The executor. Google's successor to Gemini CLI for individual accounts — browser sign-in, no API key.</p>
       <div class="resource-repo">antigravity.google</div>
     </a>
+    <a class="glass-card resource-card" href="https://github.com/Gentleman-Programming/gentle-ai" target="_blank">
+      <h4>gentle-ai</h4>
+      <p>The orchestrator's workflow since 2026-11-21: ODD (Organic Driven Development), Engram memory, and review skills. Lanes is the relay's backend for it.</p>
+      <div class="resource-repo">github.com/Gentleman-Programming/gentle-ai</div>
+    </a>
     <a class="glass-card resource-card" href="https://github.com/obra/superpowers" target="_blank">
       <h4>obra/superpowers</h4>
-      <p>Core skills framework. Full development cycle: brainstorm → plan → TDD → subagent-dev → review → ship.</p>
+      <p>Skills framework. TDD, debugging, review and worktree skills stay in use; its brainstorm → plan → subagent-dev pipeline was retired in favour of gentle-ai's ODD.</p>
       <div class="resource-repo">github.com/obra/superpowers</div>
     </a>
     <a class="glass-card resource-card" href="https://github.com/anthropics/anthropic-cookbook" target="_blank">
