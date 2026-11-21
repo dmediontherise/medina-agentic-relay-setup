@@ -1,5 +1,5 @@
 ---
-description: "Alias for /implement — executes the latest plan through the relay"
+description: "Alias for /implement — drains an ODD feature document with the lanes autopilot"
 ---
 
 `/execute-plan` is an alias for `/implement`.

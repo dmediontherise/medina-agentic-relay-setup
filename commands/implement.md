@@ -1,155 +1,22 @@
 ---
-description: "Execute the latest implementation plan through the relay, unattended (agy executes, agy scouts, agy mutates, Sonnet validates)"
+description: Drain an ODD feature document unattended with the lanes autopilot
 ---
 
-Execute an existing implementation plan through the relay. You decompose the plan into
-task specs; autopilot runs all of them. Once you launch it, you are out of the loop until
-it finishes.
+1. Find the feature document: `$ARGUMENTS` if given, else the most recently modified
+   `odd/tasks/*.md` with unchecked rows. If there is none, stop and say so — ODD creates
+   the document; this command only executes it.
+2. Check every pending row has `route` (inline | write | explore), `risk`
+   (low | high(<item>)) and `In:` in its parenthetical. Fill in missing ones from the specs
+   and say what you added. Confirm the header has a `Runner:` command; without one,
+   low-risk rows are committed UNVERIFIED — tell the user.
+3. Commit or stash so the tree is clean outside `odd/` and `.relay/`.
+4. Run in the background and end your turn:
 
-There is no second terminal window. Agents run as psmux panes in one detached session;
-watch them with `psmux attach -t relay` (Ctrl+B d detaches).
+       ~/.claude/relay/lanes.sh autopilot --doc <doc>
 
-## 1. Locate the plan
+5. On completion (exit 0 drained/stopped, 4 needs a decision), read `## Log`. Reconcile
+   the Engram mirror `odd/<feature>/tasks` with the document, then report: rows done with
+   commits, follow-ups, blocked rows with the exact decision each needs, and any
+   UNVERIFIED rows.
 
-If `$ARGUMENTS` names a plan file, use it. Otherwise search `docs/superpowers/plans/` and
-`docs/maestro/plans/` for `.md` files and take the most recently modified one.
-
-If no plan exists, stop and tell the user to write one first with the
-`superpowers:writing-plans` skill. Do not invent a plan to proceed.
-
-Print the resolved plan path before continuing, so the user can catch a wrong pick.
-
-## 2. Make sure the relay is up
-
-```
-# Linux/macOS
-"$HOME/.claude/relay/relay.sh" health
-
-# Windows
-powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" health
-```
-
-If it is down, bring it up on the current workspace with `/relay-up`. If `health` reports
-the mutator `ABSENT`, the session predates the mutation lane — `down` then `up` to rebuild
-with all four agents.
-
-## 3. Decompose the plan into the whole queue, up front
-
-**This is the step that matters, and it is the only one you still own.**
-
-Write one task file per phase into `.relay/tasks/`, numbered in execution order, *before*
-launching anything. Autopilot runs them in id order and never asks you to interpret the
-plan, so anything you leave vague gets resolved by an agent that has not read the plan or
-this conversation.
-
-For each phase write `.relay/tasks/NNN-<slug>.md`:
-
-```markdown
-# Task NNN: <title>
-
-## Objective
-<what "done" means, in one or two sentences>
-
-## Scope
-- In:  <files/areas the executor may touch>
-- Out: <explicitly off-limits>
-
-## Requirements
-1. <numbered, individually verifiable>
-
-## Verification
-- `<single-line command>` → <expected>
-
-## Artifacts
-- results:  `.relay/results/NNN-<slug>.md`
-- evidence: `.relay/evidence/NNN-<slug>.md`
-- report:   `.relay/reports/NNN-<slug>.md`
-```
-
-The filename's basename is the id for every artifact the task produces — autopilot depends
-on that convention, so do not rename artifacts away from the task's own basename.
-
-Carry the plan's requirements and verification commands across verbatim where it states
-them. Where it is vague, tighten it into something checkable by someone who did not write
-it, and list what you tightened in your summary.
-
-Three rules, each from a cycle that went wrong:
-
-- **One phase per task.** Never batch phases: a verdict spanning unrelated changes is
-  worthless, and under autopilot nobody notices until the run is over.
-- **Every verification command must be a single line that runs as written.** No
-  `try`/`except`, `if` or `for` after a semicolon in a `python -c` — that is a
-  `SyntaxError`; the executor reformats it, runs something else, and reports the result it
-  expected. Prefer an assert one-liner, or put the assertion in the suite and verify with
-  `pytest -q`.
-- **The Objective is graded too.** Write it as a summary of the requirements, never as a
-  stronger claim than they support. A validator has already failed an Objective for
-  promising an outcome its requirements could not deliver.
-
-**Resolve ambiguity with the user before writing any task file — not after autopilot fails
-on it.** A task file is read literally and once by three agents that cannot ask what you
-meant; each has its own escalation for ambiguity found mid-cycle (the executor writes
-`BLOCKED`, the scout files an open question, the validator writes `NEEDS HUMAN:`), but
-under autopilot reaching any of them costs a full unattended cycle before the question
-even reaches a human. You're still in the room now — use that.
-
-Keep two things separate:
-
-- **A reading of the plan that changes what "done" means, or a gap the plan never
-  specifies.** That's the user's call, not yours to fill in. Collect every such question
-  across the whole plan and ask them together, in one round, before writing any task
-  file — not one at a time as you reach each phase.
-- **A place the plan is silent where any reasonable choice satisfies its intent** (e.g.
-  ordering two independent steps it never sequences, or how two requirements resolve on
-  an input neither addresses). Decide it yourself and write the decision into the task,
-  so the executor isn't the one guessing either.
-
-Silently picking a reading of the first kind is how a run that validates cleanly still
-ships the wrong thing — the requirements it graded against were never what the user meant.
-
-**Never write per-agent routing instructions into a task file.** If a requirement can only
-be proved by breaking the code — "this test must fail when X is disabled" — write it as a
-plain numbered requirement naming the mutation, and stop. The scout marks it `none` and
-points at the mutation lane, the mutator runs it on its snapshot, the validator reads the
-result; all three know that from their charters. A `## Notes for the scout` block in a task
-file is a sign a charter is wrong, and a task-level patch does not survive to the next
-task — fix the charter in `~/.claude/relay/charters/` instead.
-
-## 4. Hand it to autopilot
-
-```
-# Linux/macOS
-"$HOME/.claude/relay/relay.sh" autopilot
-
-# Windows
-powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" autopilot
-```
-
-If Jev is installed (`~/Jev-AI-Skill/.venv/bin/python ~/Jev-AI-Skill/jev_mcp.py --check`
-prints `OK`), launch with the Jev gates on: prefix `RELAY_JEV=1` on Linux/macOS, or run
-`$env:RELAY_JEV='1';` first in the Windows command. `/relay-auto` step 3 says what they
-do. They matter most here: a task spec this step wrote too loosely can now come back as a
-BLOCKED that Jev answers, instead of stopping the whole run.
-
-Run it as a **background** command; it runs for hours and you are notified when it exits.
-Follow `/relay-auto` from step 4 onward for what to do while it runs and how to report.
-
-Autopilot executes, scouts, mutation-tests in parallel, validates, and — on a FAIL — runs
-the follow-up task the validator writes itself, until the queue drains or a ceiling stops
-it.
-
-## 5. Report
-
-Read `.relay/logs/autopilot-latest.md` and report each phase's verdict exactly as the
-validator returned it: PASS, PASS-WITH-CONCERNS (naming every concern), or FAIL with its
-evidence. Then map the verdicts back onto the plan's phases, since that is the shape the
-user is holding in their head — say which phases are done, which failed, and which never
-ran because the run stopped early.
-
-If the run stopped on `executor is BLOCKED` (see `/relay-auto`'s stop-reason table), that
-phase never reached the scout, mutator, or validator — report the executor's question
-verbatim rather than as a FAIL, since nothing has graded the work yet.
-
-Never soften a FAIL into a summary of what was attempted.
-
-You remain the orchestrator. You do not implement the plan yourself.
+Stop early: `touch .relay/STOP`.

@@ -293,7 +293,7 @@ $script:RepaintSettleMs = if ($env:RELAY_REPAINT_SETTLE) {
 # input, so a dispatched instruction is simply absorbed and never acted on.
 $script:ClearablePrompts = @(
     # Key = $null: not a single keystroke - see Invoke-AcceptTrustPrompt.
-    @{ Pattern = 'trust (the contents of this|this folder)'; Key = $null; What = 'folder-trust prompt' },
+    @{ Pattern = 'trust (the contents of this|this folder)|one you trust|No, exit'; Key = $null; What = 'folder-trust prompt' },
     # agy periodically asks for CLI feedback. Seen sitting on a crashed scout pane
     # 2026-08-10; it blocks the input line exactly like the trust gate does.
     @{ Pattern = "How's the CLI experience so far"; Key = '0'; What = 'agy feedback survey' }

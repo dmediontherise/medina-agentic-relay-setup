@@ -5,6 +5,12 @@ four agents in live terminal panes implement, verify, mutation-test, and judge.
 Coordination happens over a file bus, so results are lossless and every step leaves a
 durable artifact.
 
+> **Default mode on WSL/Linux since 2026-11-21: [lanes](#lanes-the-relay-as-a-gentle-ai-backend-wsl).**
+> Your Claude Code session runs gentle-ai's ODD workflow and does most work itself.
+> `relay/lanes.sh` starts an agent only when there is a named reason to delegate. The
+> four-pane relay described below is still installed, and it is the fallback and the
+> Windows path.
+
 `autopilot` runs the whole queue unattended — execute → scout → validate per task, with
 the mutation lane in parallel — restarting broken panes on its own and stopping when the
 work stops converging. Only the validator spends Claude quota. Optionally, **Jev** (a
@@ -28,6 +34,96 @@ The setup guide site lives in [`index.html`](index.html). The runnable control p
 lives in [`relay/`](relay/).
 
 ---
+
+## Lanes: the relay as a gentle-ai backend (WSL)
+
+Since 2026-11 the relay's default mode is **lanes**: your Claude Code session runs
+[gentle-ai](https://github.com/Gentleman-Programming/gentle-ai)'s ODD workflow and works
+inline by default, and `relay/lanes.sh` starts an agent only for a named reason —
+`explore` (read-only map), `write` (an agy writer per independent unit with its own
+`In:` scope), `verify` (the scout pre-brief written from the specs alone, scout
+evidence, and a Sonnet verdict — for high-risk changes only), or `autopilot`, which
+drains an ODD feature document's `## Tasks` unattended. Each lane is one headless turn
+in tmux session `lanes`; agy falls back to opencode on quota exhaustion as before.
+
+The four-pane cycle below still works (`relay.sh`) and is the fallback; `relay.ps1`
+stays on it until lanes is ported. Design and plan:
+`docs/superpowers/specs/2026-11-21-gentle-ai-lanes-design.md`,
+`docs/superpowers/plans/2026-11-21-gentle-ai-lanes.md`. First real run, compared with
+`relay.sh`: [`docs/lanes-first-run.md`](docs/lanes-first-run.md).
+
+### Set up lanes
+
+1. **Install gentle-ai and Engram.** Download the installer and read it before you run it:
+
+   ```bash
+   mkdir -p ~/Downloads/gentle-ai-install && cd ~/Downloads/gentle-ai-install
+   curl -fsSLo install.sh https://raw.githubusercontent.com/Gentleman-Programming/gentle-ai/main/scripts/install.sh
+   less install.sh
+   bash install.sh --method binary --dir "$HOME/.local/bin"
+   gentle-ai install --agents claude-code,antigravity,opencode --preset ecosystem-only --persona neutral --dry-run
+   gentle-ai install --agents claude-code,antigravity,opencode --preset ecosystem-only --persona neutral
+   gentle-ai telemetry disable     # optional; telemetry is on by default
+   ```
+
+   Back up `~/.claude`, `~/.claude.json`, `~/.gemini` and `~/.config/opencode` first.
+   gentle-ai writes `~/.claude/CLAUDE.md` (the ODD orchestrator), adds hooks to
+   `~/.claude/settings.json`, and registers the `engram` and `context7` MCP servers.
+   Your existing settings are kept.
+2. **Retire the overlapping superpowers skills.** ODD replaces using-superpowers,
+   brainstorming, writing-plans, executing-plans and subagent-driven-development:
+
+   ```bash
+   mkdir -p ~/.claude/skills-retired/commands
+   for s in using-superpowers brainstorming writing-plans executing-plans subagent-driven-development; do
+     [ -d ~/.claude/skills/$s ] && mv ~/.claude/skills/$s ~/.claude/skills-retired/
+   done
+   mv ~/.claude/commands/brainstorm.md ~/.claude/commands/write-plan.md ~/.claude/skills-retired/commands/ 2>/dev/null
+   ```
+
+   `/sync-superpowers` removes these five skills again after each sync. To bring them
+   back, move them out of `skills-retired/`.
+3. **Install lanes:** run `bash relay/install-lanes.sh`, then `~/.claude/relay/lanes.sh doctor`.
+   Every file the installer overwrites is first copied to `<file>.bak-<stamp>-pre-lanes`.
+   `relay.sh` is not touched.
+4. **Start a new Claude Code session**, so the gentle-ai rules, Engram and the hooks load.
+
+### Use lanes
+
+Ask Claude for a feature as usual. ODD writes the plan to `odd/tasks/<feature>.md`, a
+header with `Objective:` and `Runner:` (the test command autopilot trusts), then
+`## Specs` (`S1`, `S2`, … quoted from your request), `## Tasks` and `## Log`. Each task row
+carries the keys lanes reads:
+
+```
+- [ ] T2 S3,S4 Report unreadable files (route: inline; risk: high(contracts); In: wc.py tests/test_errors.py; after: T1; commit: pending)
+```
+
+- **`route`** is `inline` (Claude does it), `write` (an agy writer does it) or `explore`.
+- **`risk: high(<item>)`** sends the row through verify. The risk items are data,
+  security, shared contracts, concurrency, delivery, or no test that would catch a
+  regression. `low` rows are proved by the `Runner:` command instead.
+- **`In:`** is the scope. A writer's changes outside it are reverted and logged.
+- **`after:`** orders dependent rows. Low-risk `write` rows with disjoint `In:` scopes run
+  in parallel, up to 3 at once by default.
+
+| Command | Does |
+|---|---|
+| `/lane explore\|write\|prebrief\|verify --doc odd/tasks/<f>.md --task T3` | One lane, for a named reason. Prints `LANE <lane> <status> <run-dir>` |
+| `/implement [doc]` (alias `/relay-auto`, `/execute-plan`) | Drains the doc's `## Tasks` unattended with `lanes.sh autopilot` |
+| `lanes.sh doctor` / `status` / `down` | Tool check / recent lane results / stop the `lanes` tmux session |
+
+Autopilot makes every commit itself, one per row. It checks a row off only on observed
+proof: the `Runner:` passing for a low-risk row, or a `PASS` / `PASS-WITH-CONCERNS`
+verdict for a high-risk one. A first failure adds a follow-up row (`T3.f1`). A second
+failure, a Claude usage limit, or a writer's `## Needs a decision` blocks the row (`[!]`)
+and logs `Needs your decision: …`. Exit code 0 means drained, 4 means a human is needed.
+To stop a run early, `touch .relay/STOP`. Lane run directories (prompts, logs, outputs,
+`*.json` step records) are under `.relay/runs/<feature>/<task>/`, and both `.relay/` and
+gentle-ai's `.atl/` cache are kept out of git via `.git/info/exclude`.
+
+Tests: `bash tests/lanes/run_all.sh`. They use stub agents in a private tmux session, so
+they cost no quota.
 
 ## The five roles
 
@@ -244,6 +340,7 @@ loop with an independent verification chain.
 | Fallback *(optional)* | [`opencode`](https://opencode.ai) — `npm install -g opencode-ai` | `curl -fsSL https://opencode.ai/install \| bash` |
 | Jev gates *(optional)* | Python 3.11+ and [Jev-AI-Skill](https://github.com/King4s/Jev-AI-Skill) — `.\install.ps1`, **or** reuse a WSL install (no Windows install needed) | Python 3.11+ and Jev-AI-Skill — `install.sh` |
 | TypeSafe API key *(Jev only)* | [console.typesafe.ai/keys](https://console.typesafe.ai/keys) | same |
+| Lanes mode | — (not ported yet) | [gentle-ai](https://github.com/Gentleman-Programming/gentle-ai) 4.6+ with Engram — see [Set up lanes](#set-up-lanes) |
 
 Sign in once before wiring anything up — `agy` (Google browser sign-in) and `claude`.
 An agent pane sitting on an auth screen looks identical to a busy one. `opencode`'s free
@@ -295,7 +392,12 @@ cp relay/relay.sh relay/relay_jev.py relay/relay_cite.py ~/.claude/relay/   # Je
 cp -r relay/charters ~/.claude/relay/
 cp commands/*.md ~/.claude/commands/
 chmod +x ~/.claude/relay/relay.sh
+bash relay/install-lanes.sh        # lanes.sh + its charters; backs up what it overwrites
 ```
+
+On Linux/WSL, `/implement` and `/relay-auto` now drive **lanes**, which needs gentle-ai.
+See [Set up lanes](#set-up-lanes). The legacy queue runs with
+`~/.claude/relay/relay.sh autopilot`.
 
 **Optional: Jev gates.** Skip this and the relay behaves exactly as before. To use them,
 install Jev-AI-Skill and store a TypeSafe key where it looks for one:
@@ -361,9 +463,10 @@ powershell -NoProfile -File "$env:USERPROFILE\.claude\relay\relay.ps1" up -Works
 opencode fallback model instead — see [Fallback](#fallback-opencodes-free-models-when-agys-quota-runs-out).
 
 Then drive a full cycle from your Claude session with `/relay-task <what you want built>`.
-For a queue of tasks, `/relay-auto` runs all of them unattended — launch it as
-`RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot` (Windows: `$env:RELAY_JEV='1'` first) if
-you installed Jev. Or by hand:
+For a queue of `.relay/tasks/` files, run `~/.claude/relay/relay.sh autopilot`, or
+`RELAY_JEV=1 ~/.claude/relay/relay.sh autopilot` if you installed Jev (Windows:
+`$env:RELAY_JEV='1'` first). On Linux/WSL, `/relay-auto` now drives the lanes autopilot
+over an ODD document instead. Or by hand:
 
 ```bash
 R=~/.claude/relay/relay.sh                 # Windows: see the PowerShell form above
@@ -1121,7 +1224,14 @@ verification commands that survive reformatting is the cheaper fix.
 ```
 relay/
 ├── relay.ps1              Windows / psmux control plane
-├── relay.sh               macOS / Linux / tmux control plane
+├── relay.sh               macOS / Linux / tmux control plane (legacy four-pane mode)
+├── lanes.sh               lanes: delegation backend for a gentle-ai ODD orchestrator
+├── lanes/
+│   ├── lib.sh             ODD rows, specs and doc edits; scopes; worktree snapshots
+│   ├── exec.sh            one headless agent turn in tmux; agy→opencode fallback, retry, timeout
+│   ├── flow.sh            explore / write / prebrief / verify lanes; doctor, status, down
+│   └── autopilot.sh       unattended drain of an ODD doc's ## Tasks
+├── install-lanes.sh       installs lanes into ~/.claude, backing up what it overwrites
 ├── relay_jev.py           Jev gates helper, called by both (opt-in: RELAY_JEV=1)
 ├── relay_cite.py          citation check, called by both (on; RELAY_CITE=0 turns it off)
 ├── jev-calibration.md     what each gate was measured against before it shipped
@@ -1132,8 +1242,12 @@ relay/
     ├── mutator.md
     ├── validator.md
     ├── house-style.md     standing rules on form, read by every pane
-    └── rea.md             REA evidence contract (opt-in: RELAY_REA=1)
+    ├── rea.md             REA evidence contract (opt-in: RELAY_REA=1)
+    ├── lane-mode.md       lanes addendum: inputs/outputs per dispatch, one turn then stop
+    ├── lane-explore.md    read-only path:line map
+    └── lane-inline.md     headless Claude worker for autopilot's inline rows
 tests/
+├── lanes/                     lanes suite on stub agents: bash tests/lanes/run_all.sh
 ├── rea_up_harness.sh          stub-agent check of `up` with REA on
 ├── ps1_trust_prompt_test.ps1  relay.ps1 folder-trust handling on real psmux (Windows)
 └── trust_prompt_menu.ps1      stand-in trust menu that test draws
@@ -1144,8 +1258,11 @@ commands/                  Claude Code slash commands
 ├── relay-new.md           scaffold a project + bring the relay up
 ├── relay-up.md            bring the relay up on an existing project
 ├── relay-task.md          run a full cycle, driven step by step
-├── implement.md           turn a plan into task files and hand them to autopilot
-├── relay-auto.md          run the whole queue unattended (autopilot)
+├── lane.md                run one lane (explore/write/prebrief/verify) for a named reason
+├── implement.md           drain an ODD feature doc with the lanes autopilot
+├── relay-auto.md          alias for /implement
+├── execute-plan.md        alias for /implement
+├── sync-superpowers.md    update superpowers, keeping the five retired skills out
 ├── relay-status.md        health and bus contents
 └── relay-down.md          tear it down
 index.html                 setup guide site
