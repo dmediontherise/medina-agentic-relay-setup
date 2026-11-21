@@ -132,3 +132,119 @@ lane_doc_log() {
   grep -q '^## Log' "$doc" || printf '\n## Log\n\n' >> "$doc"
   printf -- '- L%s %s\n' "$n" "$2" >> "$doc"
 }
+
+# --- scopes -------------------------------------------------------------------
+# Ported from relay.sh scopes_intersect, taking In: lists directly. Conservative: a shared
+# path, either containing the other, a wildcard, or an empty list all count as overlap.
+lane_scopes_overlap() {
+  local a="$1" b="$2" pa pb hit=0
+  [ -n "$(printf '%s' "$a" | tr -d '[:space:]')" ] || return 0
+  [ -n "$(printf '%s' "$b" | tr -d '[:space:]')" ] || return 0
+  set -f
+  for pa in $a; do
+    pa="${pa#./}"; pa="${pa%/}"
+    case "$pa" in .|..|'*'|'**'|*'*'*) hit=1; break ;; esac
+    for pb in $b; do
+      pb="${pb#./}"; pb="${pb%/}"
+      case "$pb" in .|..|'*'|'**'|*'*'*) hit=1; break ;; esac
+      [ "$pa" = "$pb" ] && { hit=1; break; }
+      case "$pa" in "$pb"/*) hit=1; break ;; esac
+      case "$pb" in "$pa"/*) hit=1; break ;; esac
+    done
+    [ "$hit" -eq 1 ] && break
+  done
+  set +f
+  [ "$hit" -eq 1 ]
+}
+
+# <path> <in-list> -> 0 when path is an entry, under an entry, or matches an entry's glob
+lane_path_in_scope() {
+  local p="$1" e
+  set -f
+  for e in $2; do
+    e="${e#./}"; e="${e%/}"
+    [ "$e" = "." ] && { set +f; return 0; }
+    # shellcheck disable=SC2254  # unquoted on purpose: In: entries may be globs
+    case "$p" in $e|$e/*) set +f; return 0 ;; esac
+  done
+  set +f
+  return 1
+}
+
+# stdin: paths; <in-list> -> the paths that are out of scope
+lane_out_of_scope() {
+  local p
+  while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    lane_path_in_scope "$p" "$1" || printf '%s\n' "$p"
+  done
+}
+
+# --- worktree state -----------------------------------------------------------
+# <ws> -> "hash<TAB>path" for every path that differs from HEAD or is untracked, outside
+# .relay/ and odd/. Content is stored with `hash-object -w`, so a later revert can put a
+# file back exactly as it was before the lane, even if it was already dirty then.
+lane_tree_state() {
+  local ws="$1" p
+  { git -C "$ws" diff --no-renames --name-only HEAD -- . ':(exclude).relay' ':(exclude)odd'
+    git -C "$ws" ls-files --others --exclude-standard -- . ':(exclude).relay' ':(exclude)odd'
+  } | sort -u | while IFS= read -r p; do
+    [ -n "$p" ] || continue
+    if [ -e "$ws/$p" ]; then
+      printf '%s\t%s\n' "$(git -C "$ws" hash-object -w -- "$p")" "$p"
+    else
+      printf 'deleted\t%s\n' "$p"
+    fi
+  done
+}
+
+# <pre> <post> -> paths whose state changed between the two snapshots, sorted
+lane_tree_delta() {
+  awk -F'\t' 'NR == FNR { pre[$2] = $1; next } { post[$2] = $1 }
+    END { for (p in pre) if (!(p in post) || post[p] != pre[p]) print p
+          for (p in post) if (!(p in pre)) print p }' "$1" "$2" | sort -u
+}
+
+# <ws> <path> <pre>: put one path back to its pre-lane state
+lane_revert_path() {
+  local ws="$1" p="$2" h
+  h="$(awk -F'\t' -v p="$p" '$2 == p { print $1; exit }' "$3")"
+  if [ -n "$h" ] && [ "$h" != deleted ]; then
+    mkdir -p "$(dirname "$ws/$p")"; git -C "$ws" cat-file blob "$h" > "$ws/$p"
+  elif [ "$h" = deleted ]; then
+    rm -f "$ws/$p"
+  elif git -C "$ws" cat-file -e "HEAD:$p" 2>/dev/null; then
+    git -C "$ws" checkout -q HEAD -- "$p"
+  else
+    rm -f "$ws/$p"
+  fi
+}
+
+# <ws> -> unified diff of the candidate against HEAD, untracked files included
+lane_diff() {
+  local ws="$1" f
+  git -C "$ws" diff --no-renames HEAD -- . ':(exclude).relay' ':(exclude)odd' || true
+  git -C "$ws" ls-files --others --exclude-standard -- . ':(exclude).relay' ':(exclude)odd' |
+    while IFS= read -r f; do git -C "$ws" diff --no-index -- /dev/null "$f" || true; done
+}
+
+# --- run directories ----------------------------------------------------------
+# <ws>: make .relay/runs and keep .relay/ out of git without touching .gitignore
+lane_init_ws() {
+  local ws="$1" ex
+  mkdir -p "$ws/.relay/runs"
+  ex="$(git -C "$ws" rev-parse --git-path info/exclude 2>/dev/null || true)"
+  [ -n "$ex" ] || return 0
+  case "$ex" in /*) ;; *) ex="$ws/$ex" ;; esac
+  mkdir -p "$(dirname "$ex")"
+  grep -qxF '.relay/' "$ex" 2>/dev/null || printf '.relay/\n' >> "$ex"
+}
+
+# <ws> <feature> <id> <lane> -> new run dir; .relay/runs/<feature>/<id>/latest-<lane> points at it
+lane_new_run() {
+  local d="$1/.relay/runs/$2/$3" r
+  r="$d/$4-$(date +%Y%m%dT%H%M%S)-$RANDOM"
+  mkdir -p "$r"
+  ln -sfn "$(basename "$r")" "$d/latest-$4"
+  printf '%s' "$r"
+}
