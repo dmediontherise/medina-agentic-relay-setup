@@ -223,3 +223,32 @@ cmd_verify() {
   # lane_verify_run ran in a subshell; recover its run dir from the latest link
   printf 'LANE verify %s %s\n' "$v" "$(cd "$WS/.relay/runs/$FEATURE/$TASK/latest-verify" && pwd -P)"
 }
+
+cmd_doctor() {
+  local b v note
+  for b in agy opencode claude tmux git gentle-ai engram; do
+    v="$(lane_bin "$b")"
+    if command -v "$v" >/dev/null 2>&1 || [ -x "$v" ]; then
+      printf '  %-10s %s\n' "$b" "$v"
+    else
+      note=""; case "$b" in gentle-ai|engram) note=" (lanes still run without it)" ;; esac
+      printf '  %-10s MISSING%s\n' "$b" "$note"
+    fi
+  done
+  if lane_agy_cooling; then printf '  agy quota  cooling down since %s -> lanes use opencode\n' "$(date -d "@$(cat "$LANES_STATE/agy-quota-at")" 2>/dev/null)"
+  else printf '  agy quota  no exhaustion recorded\n'; fi
+  printf '  jev        %s\n' "$(lanes_jev_on && echo on || echo off)"
+  printf '  cite       %s\n' "$(lanes_cite_on && echo on || echo off)"
+  printf '  rea        %s\n' "$(lanes_rea_on && echo on || echo off)"
+  printf '  charters   %s\n' "$CHARTERS"
+}
+
+cmd_status() {
+  local ws="$PWD"
+  [ "${1:-}" = "-w" ] && ws="$2"
+  tmux list-windows -t "$LANES_SESSION" -F '  window #{window_name}' 2>/dev/null || printf '  no lanes session\n'
+  find "$ws/.relay/runs" -name '*.json' -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -n 10 |
+    while read -r _ f; do printf '  %s\n    %s\n' "$f" "$(cat "$f")"; done
+}
+
+cmd_down() { tmux kill-session -t "$LANES_SESSION" 2>/dev/null || true; lanes_say "lanes session '$LANES_SESSION' stopped"; }
