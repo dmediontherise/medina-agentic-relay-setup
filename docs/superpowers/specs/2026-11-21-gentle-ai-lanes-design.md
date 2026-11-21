@@ -68,8 +68,14 @@ default writer; mutator as an always-on lane.
 - gentle-ai + Engram installed in WSL for agents `claude-code`, `antigravity`, `opencode`,
   after backing up `~/.claude`, `~/.gemini/config`, `~/.config/opencode`.
 
-**Tasks row format** (in the ODD feature doc, which ODD owns; the relay only adds fields):
-`- [ ] T3 | S2,S4 | route: inline|explore|write|verify | risk: low|high(<item>) | In: <paths> | commit: <sha>`
+**Tasks row format** — ODD's native row, which the relay parses as-is and extends with
+three optional keys inside the trailing parenthetical (`;`-separated, as ODD writes it):
+`- [ ] T3 S2/S4 Parse durations (route: write; risk: high(data); In: src/dur tests/dur; after: T1; commit: pending)`
+- `route`: `inline` (Claude writes) | `write` (agy write lane) | `explore` (read-only map).
+  A verify lane is not a route: it is added automatically when `risk` starts with `high`.
+- Marks: `[ ]` pending, `[x]` done, `[~]` superseded by a follow-up row, `[!]` blocked
+  (needs your decision).
+- Specs are ODD's `## Specs` bullets (`- **S1** …` or `- S1 …`), extracted verbatim.
 
 ## 3. Data flow
 
@@ -78,6 +84,8 @@ Lane run directory, one per invocation:
 .relay/runs/<feature>/<task>-<lane>-<ts>/
   dispatch.md   charter + pointer to odd/tasks/<feature>.md#S<n>
   prebrief.md   scout probes from S# alone, rows tagged Written: pre      (verify)
+                (written in a temp dir outside the repo holding only specs.md + charters,
+                so the scout is never pointed at code; agy runs it with --sandbox)
   evidence.md   scout observations, Written: pre|post, never a verdict    (verify)
   verdict.md    PASS | PASS-WITH-CONCERNS | FAIL (+ follow-up row on FAIL) (verify)
   map.md        path:line map                                              (explore)
@@ -95,8 +103,12 @@ continuity), resumes on completion.
 
 **Autopilot:** walks unchecked rows in order. `inline` rows → headless `claude -p` with the
 doc pointer and ODD rules. Lane rows → `lanes.sh`. Rows with disjoint `In:` and no
-dependency run write lanes in parallel. After each row a short headless Claude step
-performs the single-writer doc update. Stops on `.relay/STOP`, on the same row failing
+dependency run write lanes in parallel (low-risk rows only; a high-risk row always runs
+alone). Autopilot itself is the single writer during an unattended run and updates rows
+**deterministically** (no model step): a row is checked off only on observed proof — the
+doc header's `Runner:` command exiting 0 (low risk) or a validator PASS / PASS-WITH-CONCERNS
+(high risk) — and autopilot makes the commit (writers never commit). The doc update itself
+is committed once at the end. Stops on `.relay/STOP`, on the same row failing
 twice in a row, or on a genuine human decision (logged as "Needs your decision" in
 `## Log`); independent rows keep running.
 
@@ -110,6 +122,7 @@ twice in a row, or on a genuine human decision (logged as "Needs your decision" 
 | agy quota exhausted | `pane_fault` match on `quota reached` → restart pane on opencode. Checked at every lane start and stall check (not only under autopilot, unlike `relay.sh`) |
 | Lane stall/hang | `probe_budget` ceilings; one retry on a fresh pane; then `lane.json` exit `stalled`, treated as a failed check, never a pass |
 | Claude limit / `claude -p` failure (autopilot) | Stop that row, log "Needs your decision: Claude limit", continue independent lane rows; never auto-downgrade to agy |
+| Writer commits on its own | `git reset --soft` back to the pre-lane HEAD, warning logged; autopilot owns commits |
 | Write lane edits outside `In:` | Post-lane `git diff --name-only` vs `In:`; out-of-scope paths reverted; unparseable scope → row failed |
 | Validator FAIL | Insert follow-up row; same row failing twice in a row → stop that row |
 | Feature doc vs Engram drift | Claude reconciles before resuming; missing memory reported, not treated as success |
