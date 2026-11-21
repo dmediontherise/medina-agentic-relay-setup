@@ -134,3 +134,92 @@ cmd_write() {
   lane_cite "$run"
   printf 'LANE write %s %s\n' "$st" "$run"
 }
+
+# The pre-brief runs in a temp dir OUTSIDE the repo holding only specs.md and the
+# charters, so the scout is never pointed at code: a probe whose expected value comes from
+# the implementation cannot fail (README "Why the scout exists"). agy also gets --sandbox.
+# -> status; on ok, <run>/prebrief.md exists
+lane_prebrief() {
+  local run="$1" sb st c
+  sb="$(mktemp -d "${TMPDIR:-/tmp}/relay-prebrief-XXXXXX")"
+  lane_write_specs "$run" "$DOC" "$ROW"
+  cp "$run/specs.md" "$sb/specs.md"
+  for c in $(lane_charters prebrief); do cp "$c" "$sb/"; done
+  # shellcheck disable=SC2046
+  st="$(lane_exec "$run" prebrief prebrief "$sb" "$(lane_prompt prebrief \
+        $(for c in $(lane_charters prebrief); do printf '%s ' "$sb/$(basename "$c")"; done) -- \
+        "TASK: $TASK" "SPECS: $sb/specs.md" "OUTPUT: $sb/prebrief.md")" "$sb/prebrief.md")"
+  [ -f "$sb/prebrief.md" ] && cp "$sb/prebrief.md" "$run/prebrief.md"
+  rm -rf "$sb"
+  printf '%s' "$st"
+}
+
+cmd_prebrief() {
+  lane_args "$@"
+  [ -n "$TASK" ] || lanes_fail "prebrief needs --task"
+  local run st
+  run="$(lane_new_run "$WS" "$FEATURE" "$TASK" prebrief)"
+  st="$(lane_prebrief "$run")"
+  printf 'LANE prebrief %s %s\n' "$st" "$run"
+}
+
+# <verdict.md> -> PASS | PASS-WITH-CONCERNS | FAIL. A report without a VERDICT line goes
+# to Jev when enabled; anything still unclear is FAIL (one follow-up costs less than a
+# laundered pass - same asymmetry as relay_jev.py).
+lane_verdict_word() {
+  local v
+  v="$(grep -m1 -oE '^VERDICT:[[:space:]]*(PASS-WITH-CONCERNS|PASS|FAIL)' "$1" 2>/dev/null | sed -E 's/^VERDICT:[[:space:]]*//' || true)"
+  if [ -z "$v" ] && [ -f "$1" ] && lanes_jev_on; then v="$(lanes_jev verdict "$WS" "$1")"; v="${v%% *}"; fi
+  case "$v" in PASS|PASS-WITH-CONCERNS|FAIL) printf '%s' "$v" ;; *) printf 'FAIL' ;; esac
+}
+
+# <run>: mutation lane on a snapshot, in the background; never on the critical path
+lane_mutate_bg() {
+  local run="$1" snap="$1/snapshot"
+  mkdir -p "$snap"
+  (cd "$WS" && git ls-files -co --exclude-standard -z -- . ':(exclude).relay' | xargs -0 -r cp --parents -t "$snap")
+  # shellcheck disable=SC2046
+  ( lane_exec "$run" mutate mutate "$snap" "$(lane_prompt mutate $(lane_charters mutate) -- \
+      "TASK: $TASK" "SPECS: $run/specs.md" "SNAPSHOT: $snap" "OUTPUT: $run/mutation.md")" "$run/mutation.md" \
+      > "$run/mutate.status" ) < /dev/null > /dev/null 2>&1 &
+  lanes_say "mutation lane started in the background -> $run/mutation.md"
+}
+
+# Runs prebrief (unless a finished one exists for this task), evidence and the verdict.
+# -> PASS | PASS-WITH-CONCERNS | FAIL | no-evidence | <lane status>; run dir in VERIFY_RUN
+lane_verify_run() {
+  local run pb st ev
+  run="$(lane_new_run "$WS" "$FEATURE" "$TASK" verify)"; VERIFY_RUN="$run"
+  lane_write_specs "$run" "$DOC" "$ROW"
+  pb="$WS/.relay/runs/$FEATURE/$TASK/latest-prebrief/prebrief.md"
+  if [ -f "$pb" ]; then cp "$pb" "$run/prebrief.md"; else
+    st="$(lane_prebrief "$run")"
+    [ "$st" = ok ] || lanes_warn "prebrief $st - evidence will be gathered without pre probes"
+  fi
+  lane_diff "$WS" > "$run/diff.patch"
+  local res=""; [ -f "$WS/.relay/runs/$FEATURE/$TASK/latest-write/result.md" ] && res="RESULT: $WS/.relay/runs/$FEATURE/$TASK/latest-write/result.md"
+  # shellcheck disable=SC2046
+  ev="$(lane_exec "$run" evidence evidence "$WS" "$(lane_prompt evidence $(lane_charters evidence) -- \
+        "TASK: $TASK" "SPECS: $run/specs.md" "FEATURE DOC: $DOC" "PREBRIEF: $run/prebrief.md" \
+        "DIFF: $run/diff.patch" ${res:+"$res"} "OUTPUT: $run/evidence.md")" "$run/evidence.md")"
+  if [ "$ev" != ok ]; then
+    case "$ev" in limit|auth) printf '%s' "$ev" ;; *) printf 'no-evidence' ;; esac; return 0
+  fi
+  [ "$MUTATE" = "1" ] && lane_mutate_bg "$run"
+  # shellcheck disable=SC2046
+  st="$(lane_exec "$run" validator validator "$WS" "$(lane_prompt validator $(lane_charters validator) -- \
+        "TASK: $TASK" "SPECS: $run/specs.md" "PREBRIEF: $run/prebrief.md" "EVIDENCE: $run/evidence.md" \
+        "DIFF: $run/diff.patch" "OUTPUT: $run/verdict.md")" "$run/verdict.md")"
+  if [ "$st" != ok ]; then printf '%s' "$st"; return 0; fi
+  lane_verdict_word "$run/verdict.md"
+}
+
+cmd_verify() {
+  lane_args "$@"
+  [ -n "$TASK" ] || lanes_fail "verify needs --task"
+  local v
+  VERIFY_RUN=""
+  v="$(lane_verify_run)"
+  # lane_verify_run ran in a subshell; recover its run dir from the latest link
+  printf 'LANE verify %s %s\n' "$v" "$(cd "$WS/.relay/runs/$FEATURE/$TASK/latest-verify" && pwd -P)"
+}
