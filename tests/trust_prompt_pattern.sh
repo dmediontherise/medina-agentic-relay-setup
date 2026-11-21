@@ -18,5 +18,14 @@ for which in sh ps; do
   check "$which matches old wording"            "$p" "$old" 0
   check "$which matches 2026-11 wording"        "$p" "$new2" 0
   check "$which ignores ordinary output"        "$p" "Running tests... 14 passed" 1
+  # A 7-row pane shows only the menu tail; the question has scrolled off.
+  check "$which matches the menu tail alone"    "$p" " Security guide ❯ No, exit Enter to confirm" 0
 done
+# A detached session must not fall back to tmux's 80x24, which squeezes each agent
+# pane to ~40x7 and hides prompts the relay has to read.
+if grep -E 'tmux new-session ' "$here/../relay/relay.sh" | grep -q -- '-x ' && grep -E 'tmux new-session ' "$here/../relay/relay.sh" | grep -q -- '-y '; then
+  echo "  ok   relay.sh sizes the detached session"
+else
+  echo "  FAIL relay.sh sizes the detached session"; fail=1
+fi
 [ "$fail" = 0 ] && echo "trust_prompt_pattern: ok" || { echo "trust_prompt_pattern: FAILED"; exit 1; }

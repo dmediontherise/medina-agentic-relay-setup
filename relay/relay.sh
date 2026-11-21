@@ -258,7 +258,7 @@ accept_trust_prompt() {
 clear_blocking_prompts() {
   local target="$1" txt
   txt="$(pane_text "$target")"
-  if pane_match "$txt" 'trust (the contents of this|this folder)|one you trust'; then
+  if pane_match "$txt" 'trust (the contents of this|this folder)|one you trust|No, exit'; then
     if accept_trust_prompt "$target"; then
       sleep "$RELAY_REPAINT_SETTLE"; printf 'folder-trust prompt'
     fi
@@ -953,7 +953,7 @@ cmd_up() {
 
   say "Building session '$SESSION' in $workspace"
 
-  tmux new-session -d -s "$SESSION" -n agents -c "$workspace" "$l_exec"
+  tmux new-session -d -x "${RELAY_TMUX_COLS:-220}" -y "${RELAY_TMUX_ROWS:-60}" -s "$SESSION" -n agents -c "$workspace" "$l_exec"
   sleep 1
   # Re-tile after EVERY split, not once at the end. Each split halves the pane it
   # targets, so splitting five ways in a row runs the last one out of rows - which
