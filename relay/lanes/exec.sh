@@ -58,7 +58,11 @@ lane_cmdline() {
     claude)
       perm="acceptEdits"
       [ "$role" = inline ] && [ "${RELAY_LANES_SAFE:-0}" != "1" ] && perm="bypassPermissions"
-      printf '%q -p --model %q --permission-mode %s %q' "$(lane_bin claude)" "$model" "$perm" "$prompt" ;;
+      # The charters live outside the workspace. Headless claude cannot answer a
+      # permission prompt, so without --add-dir an acceptEdits validator is denied
+      # reading them and (rightly) refuses to grade. Found by the first real run.
+      printf '%q -p --model %q --permission-mode %s --add-dir %q %q' \
+        "$(lane_bin claude)" "$model" "$perm" "$RELAY_HOME/charters" "$prompt" ;;
   esac
 }
 
