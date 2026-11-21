@@ -258,7 +258,7 @@ accept_trust_prompt() {
 clear_blocking_prompts() {
   local target="$1" txt
   txt="$(pane_text "$target")"
-  if pane_match "$txt" 'trust (the contents of this|this folder)'; then
+  if pane_match "$txt" 'trust (the contents of this|this folder)|one you trust'; then
     if accept_trust_prompt "$target"; then
       sleep "$RELAY_REPAINT_SETTLE"; printf 'folder-trust prompt'
     fi
