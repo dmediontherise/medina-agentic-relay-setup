@@ -229,7 +229,7 @@ lane_diff() {
 }
 
 # --- run directories ----------------------------------------------------------
-# <ws>: make .relay/runs and keep .relay/ out of git without touching .gitignore
+# <ws>: make .relay/runs and keep .relay/ and .atl/ out of git without touching .gitignore
 lane_init_ws() {
   local ws="$1" ex
   mkdir -p "$ws/.relay/runs"
@@ -237,7 +237,12 @@ lane_init_ws() {
   [ -n "$ex" ] || return 0
   case "$ex" in /*) ;; *) ex="$ws/$ex" ;; esac
   mkdir -p "$(dirname "$ex")"
-  grep -qxF '.relay/' "$ex" 2>/dev/null || printf '.relay/\n' >> "$ex"
+  # .atl/ is gentle-ai's skill-registry cache: its UserPromptSubmit hook writes it into
+  # any repo a Claude session (an inline lane included) runs in. Not project content.
+  local p
+  for p in .relay/ .atl/; do
+    grep -qxF "$p" "$ex" 2>/dev/null || printf '%s\n' "$p" >> "$ex"
+  done
 }
 
 # <ws> <feature> <id> <lane> -> new run dir; .relay/runs/<feature>/<id>/latest-<lane> points at it

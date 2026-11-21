@@ -45,6 +45,10 @@ lane_init_ws "$ws"
 t_true "relay ignored by git" 'grep -qxF ".relay/" "$ws/.git/info/exclude"'
 lane_init_ws "$ws"
 t_eq "exclude written once" "$(grep -cxF '.relay/' "$ws/.git/info/exclude")" "1"
+t_true "gentle-ai .atl ignored by git" 'grep -qxF ".atl/" "$ws/.git/info/exclude"'
+t_eq "atl exclude written once" "$(grep -cxF '.atl/' "$ws/.git/info/exclude")" "1"
+mkdir -p "$ws/.atl"; printf '{}' > "$ws/.atl/cache.json"
+t_hasnt "atl not in tree state" "$(lane_tree_state "$ws")" ".atl"
 r="$(lane_new_run "$ws" demo T1 write)"
 t_true "run dir made"       '[ -d "$r" ]'
 t_eq   "latest link"        "$(readlink "$ws/.relay/runs/demo/T1/latest-write")" "$(basename "$r")"
