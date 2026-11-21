@@ -119,3 +119,77 @@ lane_path() {
   if lanes_rea_on; then p="$(dirname "$(lane_rea_bin)"):$p"; fi
   printf '%s' "$p"
 }
+
+lane_tmux_ready() {
+  tmux has-session -t "$LANES_SESSION" 2>/dev/null || tmux new-session -d -s "$LANES_SESSION" -n home bash
+}
+
+# <run> <tag> <provider> <model> <cwd> <prompt> <role> -> exited | timeout
+# Writes <run>/<tag>.sh (runner), <tag>.log (tee'd output), <tag>.exit (exit code).
+lane_run_once() {
+  local run="$1" tag="$2" provider="$3" model="$4" cwd="$5" prompt="$6" role="$7"
+  local runner="$run/$tag.sh" log="$run/$tag.log" code="$run/$tag.exit" win deadline
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'export PATH=%q\n' "$(lane_path)"
+    # tmux starts the window from the tmux SERVER's environment, not ours, so pass
+    # through what agents and the test stubs need explicitly.
+    env | grep -E '^(STUB_[A-Za-z_]+|RELAY_[A-Z_]+|ANTHROPIC_[A-Z_]+|CLAUDE_[A-Z_]+|GEMINI_[A-Z_]+|GOOGLE_[A-Z_]+|OPENCODE_[A-Z_]+)=' |
+      while IFS='=' read -r k v; do printf 'export %s=%q\n' "$k" "$v"; done || true
+    printf 'cd %q || { echo 1 > %q; exit 1; }\n' "$cwd" "$code"
+    printf '%s < /dev/null 2>&1 | tee %q\n' "$(lane_cmdline "$provider" "$model" "$cwd" "$prompt" "$role")" "$log"
+    printf 'echo "${PIPESTATUS[0]}" > %q\n' "$code"
+  } > "$runner"
+  chmod +x "$runner"
+  lane_tmux_ready
+  win="$(tmux new-window -d -P -F '#{window_id}' -t "$LANES_SESSION:" -n "$(basename "$(dirname "$run")")-$tag" \
+         "bash $(printf '%q' "$runner"); sleep ${RELAY_LANE_LINGER:-5}")"
+  deadline=$(( $(date +%s) + ${RELAY_LANE_TIMEOUT:-1800} ))
+  while [ ! -f "$code" ]; do
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      tmux kill-window -t "$win" 2>/dev/null || true; printf 'timeout'; return 0
+    fi
+    # agy can sit on its quota banner instead of exiting; end the turn so the caller
+    # classifies it and falls back.
+    if [ "$provider" = agy ] && [ -f "$log" ] && tail -n 40 "$log" | grep -qiE "$QUOTA_PAT"; then
+      tmux kill-window -t "$win" 2>/dev/null || true; printf 'exited'; return 0
+    fi
+    sleep "${RELAY_LANE_POLL:-3}"
+  done
+  printf 'exited'
+}
+
+# <run> <step> <role> <cwd> <prompt> <expect-file>
+#   -> ok | failed | stalled | limit | auth     (also writes <run>/<step>.json)
+# One retry for a turn that ends without its output or times out. An agy quota fault
+# moves to opencode without spending the retry. Claude roles never fall back.
+lane_exec() {
+  local run="$1" step="$2" role="$3" cwd="$4" prompt="$5" expect="$6"
+  local provider model st fault n=0 attempt=1 tries="" t0
+  t0="$(date +%s)"
+  case "$role" in
+    validator|inline) provider=claude ;;
+    *) provider=agy; lane_agy_cooling && provider=opencode ;;
+  esac
+  while :; do
+    n=$((n + 1))
+    model="$(lane_model_for "$provider" "$role")"
+    rm -f "$expect"
+    st="$(lane_run_once "$run" "$step-$n" "$provider" "$model" "$cwd" "$prompt" "$role")"
+    if [ "$st" = exited ] && [ -s "$expect" ]; then tries="$tries $provider:ok"; st=ok; break; fi
+    [ "$st" = exited ] && st=failed
+    tries="$tries $provider:$st"
+    fault="$(lane_classify_log "$run/$step-$n.log" "$provider")"
+    if [ "$fault" = quota ] && [ "$provider" = agy ] && [ "${RELAY_NO_OPENCODE_FALLBACK:-0}" != "1" ]; then
+      lane_mark_agy_quota
+      lanes_warn "agy quota exhausted - $step moves to opencode"
+      provider=opencode; continue
+    fi
+    if [ "$fault" = limit ] || [ "$fault" = auth ]; then st="$fault"; break; fi
+    if [ "$attempt" -ge 2 ]; then [ "$st" = timeout ] && st=stalled; break; fi
+    attempt=$((attempt + 1))
+  done
+  printf '{"step": "%s", "role": "%s", "status": "%s", "tries": "%s", "seconds": %s}\n' \
+    "$step" "$role" "$st" "${tries# }" "$(( $(date +%s) - t0 ))" > "$run/$step.json"
+  printf '%s' "$st"
+}
