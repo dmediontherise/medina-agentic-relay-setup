@@ -29,6 +29,23 @@ lives in [`relay/`](relay/).
 
 ---
 
+## Lanes: the relay as a gentle-ai backend (WSL)
+
+Since 2026-11 the relay's default mode is **lanes**: your Claude Code session runs
+[gentle-ai](https://github.com/Gentleman-Programming/gentle-ai)'s ODD workflow and works
+inline by default, and `relay/lanes.sh` starts an agent only for a named reason —
+`explore` (read-only map), `write` (an agy writer per independent unit with its own
+`In:` scope), `verify` (the scout pre-brief written from the specs alone, scout
+evidence, and a Sonnet verdict — for high-risk changes only), or `autopilot`, which
+drains an ODD feature document's `## Tasks` unattended. Each lane is one headless turn
+in tmux session `lanes`; agy falls back to opencode on quota exhaustion as before.
+
+The four-pane cycle below still works (`relay.sh`) and is the fallback; `relay.ps1`
+stays on it until lanes is ported. Design and plan:
+`docs/superpowers/specs/2026-11-21-gentle-ai-lanes-design.md`,
+`docs/superpowers/plans/2026-11-21-gentle-ai-lanes.md`. Tests: `bash tests/lanes/run_all.sh`.
+Install: `bash relay/install-lanes.sh`.
+
 ## The five roles
 
 | Role | Model | Job |
